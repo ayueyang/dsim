@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F3F5F8"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="正式设置"
+            android:textColor="#111827"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="这里集中管理设备名、云端连接和历史同步相关设置。"
+            android:textColor="#64748B"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="#FFFFFF"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="基础配置"
+                android:textColor="#111827"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvDefaultSmsStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="#F8FAFC"
+                android:padding="14dp"
+                android:textColor="#475569"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnRequestDefaultSmsSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:backgroundTint="#2457F5"
+                android:text="设为默认短信应用"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnOpenInboxSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#E2E8F0"
+                android:text="返回信息列表"
+                android:textAllCaps="false"
+                android:textColor="#0F172A" />
+
+            <Button
+                android:id="@+id/btnManageSimSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#2457F5"
+                android:text="SIM 绑定管理"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnViewDevicesSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#E2E8F0"
+                android:text="查看设备"
+                android:textAllCaps="false"
+                android:textColor="#0F172A" />
+
+            <Switch
+                android:id="@+id/switchMuteNotificationsSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="新消息静音"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="开启后，新短信通知只静默显示；云端连接和历史同步通知不受影响。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnOpenTestTools"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#0F172A"
+                android:text="测试功能"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#FFFFFF"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="设备名称"
+                android:textColor="#111827"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvCurrentDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textColor="#334155"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tvSystemDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="#64748B"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/etDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="#F8FAFC"
+                android:hint="输入新的设备名"
+                android:maxLength="32"
+                android:padding="14dp"
+                android:singleLine="true"
+                android:textColor="#111827"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="保存后，会话来源、设备列表和云端展示都会使用新的名称。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnSaveDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:backgroundTint="#2457F5"
+                android:text="保存设备名"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnResetDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#E2E8F0"
+                android:text="恢复系统默认"
+                android:textAllCaps="false"
+                android:textColor="#0F172A" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#FFFFFF"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="云端连接"
+                android:textColor="#111827"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/etMqttBrokerSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="#F8FAFC"
+                android:hint="云端 Broker"
+                android:padding="14dp"
+                android:singleLine="true"
+                android:textColor="#111827"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/etMqttTopicSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="#F8FAFC"
+                android:hint="同步主题"
+                android:padding="14dp"
+                android:singleLine="true"
+                android:textColor="#111827"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/etMqttPasswordSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="#FFF7ED"
+                android:hint="端到端加密口令"
+                android:inputType="textPassword"
+                android:padding="14dp"
+                android:singleLine="true"
+                android:textColor="#111827"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnSaveCloudConfig"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:backgroundTint="#E2E8F0"
+                android:text="保存云端配置"
+                android:textAllCaps="false"
+                android:textColor="#0F172A" />
+
+            <Button
+                android:id="@+id/btnConnectCloudSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#2457F5"
+                android:text="连接云端"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/tvCloudConnectionStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="#F8FAFC"
+                android:padding="12dp"
+                android:textColor="#475569"
+                android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/switchAutoConnectSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="开机自动连接云端"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="设备开机后自动拉起后台服务，并尝试接入当前通道。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/switchAutoReconnectSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="断线后自动重连"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tvAutoReconnectHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="网络中断后由后台自动重连。变更后会在下次连接时生效。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#FFFFFF"
+            android:elevation="3dp"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="系统历史短信"
+                android:textColor="#111827"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Switch
+                android:id="@+id/switchSystemHistoryImport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="允许手动导入系统历史短信"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tvSystemHistoryImportHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="默认关闭。开启后可手动读取系统历史短信；如已连接云端，会按队列逐条同步并等待对端确认。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/switchAllowRemoteHistorySync"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="允许远程发起历史同步"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="开启后，本机在线时可被其他设备加入历史同步队列。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnImportSystemHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:backgroundTint="#2E7D32"
+                android:text="本机立即开始"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnOpenRemoteQueueManager"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#2457F5"
+                android:text="远程发起其他设备"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnResetHistoryImport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#FDE68A"
+                android:text="重置本机读取进度"
+                android:textAllCaps="false"
+                android:textColor="#78350F" />
+
+            <Button
+                android:id="@+id/btnViewHistoryQueue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#E2E8F0"
+                android:text="查看历史同步队列"
+                android:textAllCaps="false"
+                android:textColor="#0F172A" />
+
+            <TextView
+                android:id="@+id/tvSystemHistoryImportStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="#F8FAFC"
+                android:lineSpacingExtra="2dp"
+                android:padding="14dp"
+                android:textColor="#475569"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

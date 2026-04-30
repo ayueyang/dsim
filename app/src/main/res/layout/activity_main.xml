@@ -4,8 +4,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#F4F6FB"
     android:fillViewport="true"
-    android:background="#EFEFEF"
     tools:context=".MainActivity">
 
     <LinearLayout
@@ -13,238 +13,461 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp"
-        android:paddingBottom="40dp">
+        android:paddingStart="20dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="32dp">
 
-        <Button
-            android:id="@+id/btnRequestDefaultSms"
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:text="1. 设为默认短信应用" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnInsertFakeSms"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="2. 注入幽灵短信" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/btnReadAllHistory"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="4. 读取本机所有历史短信" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
             android:layout_marginBottom="16dp"
-            android:background="#CCCCCC" />
+            app:cardBackgroundColor="#10213B"
+            app:cardCornerRadius="28dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#1D365F"
+            app:strokeWidth="1dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnCheckRoot"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="检查/请求 Root" />
-
-            <TextView
-                android:id="@+id/tvRootStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_gravity="center"
-                android:text="Root状态: 未知"
-                android:textColor="#FF0000"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="=== 云端暗号配对 (MQTT) ==="
-            android:textStyle="bold"
-            android:layout_marginTop="16dp"/>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#F5F5F5"
-            android:padding="8dp"
-            android:layout_marginBottom="8dp">
-            
-            <EditText
-                android:id="@+id/etMqttBroker"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="云端节点 (默认 tcp://broker.emqx.io:1883)"
-                android:text="tcp://broker.emqx.io:1883"
-                android:textSize="14sp"/>
-                
-            <EditText
-                android:id="@+id/etMqttTopic"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="测试功能"
+                    android:textColor="#FFFFFF"
+                    android:textSize="30sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="调试、硬件探测和数据维护"
+                    android:textColor="#D7E3FF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="这里保留开发和排查问题需要的工具。正式收发短信从信息列表进入，常用配置放在设置里。"
+                    android:textColor="#B8C7E6"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnOpenInbox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:backgroundTint="#FFFFFF"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    android:text="返回信息列表"
+                    android:textAllCaps="false"
+                    android:textColor="#10213B"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="测试按钮已集中在下方区域。"
+                    android:textColor="#90A4C8"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#FFFFFF"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#E2E8F3"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="路由频道 (如 dsim_channel_001)"
-                android:textSize="14sp"/>
-                
-            <EditText
-                android:id="@+id/etMqttPassword"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="设备与权限"
+                    android:textColor="#162033"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="先把默认短信权限、SIM 管理和设备雷达放在首页上半区，日常使用会更顺手。"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnRequestDefaultSms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="设为默认短信应用"
+                    android:textAllCaps="false" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnManageSim"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:text="SIM 绑定管理"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        android:id="@+id/btnRadar"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="#FF7043"
+                        android:text="查看设备"
+                        android:textAllCaps="false"
+                        android:textColor="#FFFFFF" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnCheckRoot"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:text="检查 / 请求 Root"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvRootStatus"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="#F7F9FC"
+                        android:padding="12dp"
+                        android:text="Root 状态：未知"
+                        android:textColor="#D14343"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#FFFFFF"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#E2E8F3"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="端到端加密密钥 (极其重要，打死别泄露)"
-                android:inputType="textPassword"
-                android:textColor="#F44336"
-                android:textSize="14sp"/>
-        </LinearLayout>
+                android:orientation="vertical"
+                android:padding="20dp">
 
-        <Button
-            android:id="@+id/btnConnectCloud"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="云端同步"
+                    android:textColor="#162033"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="配置 Broker、主题和加密口令后，就可以让多台设备共享短信与指令。"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etMqttBroker"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:background="#F7F9FC"
+                    android:hint="云端 Broker，例如 tcp://broker.emqx.io:1883"
+                    android:padding="14dp"
+                    android:text="tcp://broker.emqx.io:1883"
+                    android:textSize="14sp" />
+
+                <EditText
+                    android:id="@+id/etMqttTopic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="#F7F9FC"
+                    android:hint="同步主题，例如 dsim_channel_001"
+                    android:padding="14dp"
+                    android:textSize="14sp" />
+
+                <EditText
+                    android:id="@+id/etMqttPassword"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="#FFF6F6"
+                    android:hint="端到端加密口令"
+                    android:inputType="textPassword"
+                    android:padding="14dp"
+                    android:textColor="#C62828"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnConnectCloud"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:backgroundTint="#2457F5"
+                    android:text="接入云端频道"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF" />
+
+                <Switch
+                    android:id="@+id/switchAutoConnect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="开机自动连接并保持后台守护"
+                    android:textColor="#334155"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal"
+                    android:weightSum="2">
+
+                    <Button
+                        android:id="@+id/btnPushIncremental"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="#2E7D32"
+                        android:text="增量同步"
+                        android:textAllCaps="false"
+                        android:textColor="#FFFFFF" />
+
+                    <Button
+                        android:id="@+id/btnPushFullHistory"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="#EF6C00"
+                        android:text="全量补发"
+                        android:textAllCaps="false"
+                        android:textColor="#FFFFFF" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="接入云端频道" />
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#FFFFFF"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#E2E8F3"
+            app:strokeWidth="1dp">
 
-        <Switch
-            android:id="@+id/switchAutoConnect"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="12dp"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="12dp"
-            android:text="⚡ 开机自动静默连线并常驻后台"
-            android:textColor="#333333"
-            android:textSize="14sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="8dp"
-            android:weightSum="2">
-
-            <Button
-                android:id="@+id/btnPushIncremental"
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:text="增量同步 (仅新数据)"
-                android:backgroundTint="#4CAF50"
-                android:textColor="#FFFFFF" />
+                android:orientation="vertical"
+                android:padding="20dp">
 
-            <Button
-                android:id="@+id/btnPushFullHistory"
-                android:layout_width="0dp"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="测试实验区"
+                    android:textColor="#162033"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="这里保留你现有的测试按钮，不删功能，只把它们集中到一个更清晰的区域里。"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="短信与硬件"
+                    android:textColor="#334155"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnStartTest"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="硬件可行性探测"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/btnInsertFakeSms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="注入模拟短信"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/btnReadAllHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="读取本机历史短信"
+                    android:textAllCaps="false" />
+
+                <Button
+                    android:id="@+id/btnToggleRootMock"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#FB8C00"
+                    android:text="关闭 Root 探测（开启无 Root 测试）"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="通知与维护"
+                    android:textColor="#334155"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnToggleMute"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="#2457F5"
+                    android:text="通知状态：响铃与弹窗"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnTestNotification"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#7C3AED"
+                    android:text="触发本地模拟通知"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnClearSmsDb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#D32F2F"
+                    android:text="清空私有短信数据库"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="#FFFFFF"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#E2E8F3"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="4dp"
-                android:text="全量补发 (极其耗时)"
-                android:backgroundTint="#FF9800"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:orientation="vertical"
+                android:padding="20dp">
 
-        <Button
-            android:id="@+id/btnStartTest"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="硬件可行性探测" />
-            
-        <Button
-            android:id="@+id/btnManageSim"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="SIM卡绑定管理 (手动解绑)"
-            android:layout_marginTop="8dp"/>
-            
-        <Button
-            android:id="@+id/btnToggleRootMock"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="关闭 Root 探测 (开启无 Root 测试)"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#FF9800"
-            android:layout_marginTop="8dp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="运行日志"
+                    android:textColor="#162033"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnClearSmsDb"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="清空私有数据库 (仅删除短信)"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#F44336"
-            android:layout_marginTop="8dp"/>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="调试结果、同步状态和测试输出会继续写在这里。"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp" />
 
-        <Button
-            android:id="@+id/btnToggleMute"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="通知状态：🔔 响铃与弹窗"
-            android:backgroundTint="#2196F3"
-            android:textColor="#FFFFFF" />
+                <ProgressBar
+                    android:id="@+id/progressBar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:indeterminate="true"
+                    android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btnTestNotification"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="🚨 触发本地模拟通知 (测试声音与弹窗)"
-            android:backgroundTint="#9C27B0"
-            android:textColor="#FFFFFF" />
-
-        <Button
-            android:id="@+id/btnRadar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="📡 探测云端在线节点"
-            android:backgroundTint="#FF5722"
-            android:textColor="#FFFFFF" />
-
-        <ProgressBar
-            android:id="@+id/progressBar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:indeterminate="true"
-            android:visibility="gone" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="=== 日志输出区 ==="
-            android:textStyle="bold"
-            android:layout_marginTop="16dp"/>
-
-        <TextView
-            android:id="@+id/tvReport"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="200dp"
-            android:padding="8dp"
-            android:text="等待指令..."
-            android:fontFamily="monospace"
-            android:textSize="12sp"
-            android:textColor="#333333"
-            android:background="#F0F0F0" />
+                <TextView
+                    android:id="@+id/tvReport"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="#F7F9FC"
+                    android:fontFamily="monospace"
+                    android:minHeight="220dp"
+                    android:padding="14dp"
+                    android:text="等待指令..."
+                    android:textColor="#334155"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>
 

@@ -45,3 +45,7 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Local test artifacts
+/tmp_db/
+/tmp_previews/

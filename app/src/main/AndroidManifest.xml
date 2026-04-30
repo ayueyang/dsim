@@ -34,8 +34,14 @@
 
         <activity
             android:name=".MainActivity"
+            android:exported="false"
+            android:label="测试功能"
+            android:theme="@style/Theme.DSIM" />
+
+        <activity
+            android:name=".SmsListActivity"
             android:exported="true"
-            android:theme="@style/Theme.DSIM">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -43,17 +49,24 @@
         </activity>
 
         <activity
-            android:name=".SmsListActivity"
-            android:exported="false"
-            android:label="短信控制台" />
-
-        <activity
             android:name=".SmsChatActivity"
             android:exported="false"
             android:windowSoftInputMode="stateHidden" />
 
         <activity
+            android:name=".OtpConversationActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".DeviceManagerActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SimBindingActivity"
             android:exported="false" />
 
         <!-- 1. 必须组件：短信接收器 (高优先级哨兵) -->
@@ -63,6 +76,14 @@
             android:exported="true">
             <intent-filter android:priority="2147483647">
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".SmsReceivedReceiver"
+            android:exported="true">
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 
@@ -111,6 +132,12 @@
         <!-- 5. 分布式同步服务 (前台保活) -->
         <service
             android:name=".MqttSyncService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".SystemHistoryImportService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

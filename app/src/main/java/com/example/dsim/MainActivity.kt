@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.MenuItem
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,10 +23,12 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var btnOpenInbox: Button
     private lateinit var btnStartTest: Button
     private lateinit var btnRequestDefaultSms: Button
     private lateinit var btnInsertFakeSms: Button
     private lateinit var btnReadAllHistory: Button
+    private lateinit var btnReadDualDbTest: Button
     private lateinit var btnManageSim: Button
     private lateinit var btnToggleRootMock: Button
     
@@ -45,6 +48,9 @@ class MainActivity : AppCompatActivity() {
     private val PREFS_NAME = "dsim_prefs"
     private val KEY_MQTT_BROKER = "last_mqtt_broker"
     private val KEY_MQTT_TOPIC = "last_mqtt_topic"
+    private val SYNC_PREFS_NAME = "dSIM_SYNC_PREFS"
+    private val KEY_HIGH_WATERMARK = "HIGH_WATERMARK"
+    private var pendingPermissionAction: (() -> Unit)? = null
 
     // 1. 定义设置默认短信应用的回调
     private val defaultSmsLauncher = registerForActivityResult(
@@ -59,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
     // 所需的所有权限
     private val requiredPermissions = mutableListOf(
+        Manifest.permission.SEND_SMS,
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_SMS,
         Manifest.permission.RECEIVE_SMS,
@@ -76,11 +83,28 @@ class MainActivity : AppCompatActivity() {
     // 权限请求启动器
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ -> }
+    ) { _ ->
+        val allGranted = requiredPermissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+        val action = pendingPermissionAction
+        pendingPermissionAction = null
+
+        if (allGranted) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                SimConfigIdentityManager.syncLocalConfigs(this@MainActivity)
+            }
+            action?.invoke()
+        } else {
+            Toast.makeText(this, "缺少必要权限，当前操作未执行", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        title = "测试功能"
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         NotificationUtils.createNotificationChannel(this)
 
@@ -89,23 +113,23 @@ class MainActivity : AppCompatActivity() {
         }
         androidx.core.content.ContextCompat.startForegroundService(this, daemonIntent)
 
-        // 顶部新增：进入正式 UI 界面的入口按钮
-        val btnEnterUI = android.widget.Button(this).apply {
-            text = "进入正式短信会话 UI"
-            setBackgroundColor(android.graphics.Color.parseColor("#2196F3"))
-            setTextColor(android.graphics.Color.WHITE)
-            setOnClickListener {
-                startActivity(android.content.Intent(this@MainActivity, SmsListActivity::class.java))
-            }
-        }
-        val mainContainer = findViewById<android.widget.LinearLayout>(R.id.main)
-        mainContainer?.addView(btnEnterUI, 0)
-
         // 初始化视图
+        btnOpenInbox = findViewById(R.id.btnOpenInbox)
+        btnOpenInbox = findViewById(R.id.btnOpenInbox)
         btnStartTest = findViewById(R.id.btnStartTest)
         btnRequestDefaultSms = findViewById(R.id.btnRequestDefaultSms)
         btnInsertFakeSms = findViewById(R.id.btnInsertFakeSms)
         btnReadAllHistory = findViewById(R.id.btnReadAllHistory)
+        btnReadDualDbTest = Button(this).apply {
+            text = "双库只读测试"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (8 * resources.displayMetrics.density).toInt()
+            }
+        }
         btnManageSim = findViewById(R.id.btnManageSim)
         btnToggleRootMock = findViewById(R.id.btnToggleRootMock)
         
@@ -119,6 +143,10 @@ class MainActivity : AppCompatActivity() {
         
         progressBar = findViewById(R.id.progressBar)
         tvReport = findViewById(R.id.tvReport)
+        (btnReadAllHistory.parent as? LinearLayout)?.let { testSection ->
+            val insertIndex = testSection.indexOfChild(btnReadAllHistory) + 1
+            testSection.addView(btnReadDualDbTest, insertIndex)
+        }
 
         // 读取保存的配置
         val sharedPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -132,6 +160,10 @@ class MainActivity : AppCompatActivity() {
         etMqttPassword.setText(uiPrefs.getString("PASSWORD", ""))
 
         // 绑定事件
+        btnOpenInbox.setOnClickListener {
+            startActivity(Intent(this@MainActivity, SmsListActivity::class.java))
+        }
+
         btnRequestDefaultSms.setOnClickListener {
             val intent = DefaultSmsManager.createRequestRoleIntent(this)
             if (intent != null) {
@@ -145,10 +177,32 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 val dao = com.example.dsim.database.DsimDatabase.getDatabase(this@MainActivity).dsimDao()
                 
-                val localConfigs = dao.getActiveSimConfigs().filter { it.bindMode != "REMOTE_SHADOW" }
+                val activeConfigs = dao.getActiveSimConfigs()
+                val localConfigs = activeConfigs.filter { it.bindMode != "REMOTE_SHADOW" }
+                val detectedPhysicalSims = HardwareProbeUtils.getStructuredSimInfo(this@MainActivity)
 
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     if (localConfigs.isEmpty()) {
+                        val hasPhysicalSim = detectedPhysicalSims.isNotEmpty()
+                        val onlyShadowConfigs = activeConfigs.isNotEmpty()
+
+                        if (hasPhysicalSim || onlyShadowConfigs) {
+                            val message = if (hasPhysicalSim && onlyShadowConfigs) {
+                                "检测到本机有物理 SIM，但当前只有云端影子卡映射，无法注入到本地卡。\n\n请先执行“硬件可行性探测”或进入“SIM 绑定管理”，把本机 SIM 绑定为本地卡。"
+                            } else {
+                                "检测到本机有物理 SIM，但还没有建立本地活跃绑定，所以暂时无法注入模拟短信。\n\n请先执行“硬件可行性探测”，完成本机 SIM 绑定。"
+                            }
+
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("暂时无法注入模拟短信")
+                                .setMessage(message)
+                                .setPositiveButton("去探测并绑定") { _, _ ->
+                                    startSimBindingFlow()
+                                }
+                                .setNegativeButton("关闭", null)
+                                .show()
+                            return@withContext
+                        }
                         android.widget.Toast.makeText(this@MainActivity, "❌ 无本地活跃物理卡，无法模拟", android.widget.Toast.LENGTH_SHORT).show()
                         return@withContext
                     }
@@ -205,7 +259,11 @@ class MainActivity : AppCompatActivity() {
                                         val topic = prefs.getString("TOPIC", "") ?: ""
 
                                         if (password.isNotBlank() && topic.isNotBlank() && com.example.dsim.MqttSyncService.globalMqttClient?.isConnected == true) {
-                                            val payloadObj = com.example.dsim.SyncPayload(sms = mockMsg, remarkPhone = selectedConfig.phoneNumber)
+                                            val payloadObj = com.example.dsim.SyncPayload(
+                                                sms = mockMsg,
+                                                remarkPhone = selectedConfig.phoneNumber,
+                                                deviceName = com.example.dsim.DeviceNameManager.getDisplayName(this@MainActivity)
+                                            )
                                             val payloadJson = com.google.gson.Gson().toJson(payloadObj)
                                             val encrypted = com.example.dsim.DsimCryptoUtils.encryptMessage(payloadJson, password)
                                             
@@ -240,10 +298,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 云端连接逻辑 (零信任架构版)
+        btnReadDualDbTest.setOnClickListener {
+            checkPermissionAndAction {
+                tvReport.text = "正在读取系统库和 App 库..."
+                lifecycleScope.launch {
+                    setLoading(true)
+                    val result = SmsDatabaseTester.readSystemAndAppDbSummary(this@MainActivity)
+                    tvReport.text = result
+                    setLoading(false)
+                }
+            }
+        }
+
         val switchAutoConnect = findViewById<android.widget.Switch>(R.id.switchAutoConnect)
-        switchAutoConnect.isChecked = uiPrefs.getBoolean("AUTO_CONNECT", false)
+        switchAutoConnect.isChecked = CloudSettingsManager.isAutoConnectEnabled(this)
         switchAutoConnect.setOnCheckedChangeListener { _, isChecked ->
-            uiPrefs.edit().putBoolean("AUTO_CONNECT", isChecked).apply()
+            CloudSettingsManager.setAutoConnectEnabled(this, isChecked)
         }
 
         lifecycleScope.launch {
@@ -255,10 +325,7 @@ class MainActivity : AppCompatActivity() {
                     etMqttTopic.isEnabled = false
                     etMqttPassword.isEnabled = false
                     btnConnectCloud.setOnClickListener {
-                        val intent = Intent(this@MainActivity, MqttSyncService::class.java).apply {
-                            action = MqttSyncService.ACTION_DISCONNECT
-                        }
-                        androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
+                        showManualDisconnectDialog()
                     }
                 } else {
                     btnConnectCloud.text = "接入云端频道"
@@ -318,8 +385,8 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            val prefs = getSharedPreferences("dSIM_SYNC_PREFS", Context.MODE_PRIVATE)
-            val lastWatermark = prefs.getLong("HIGH_WATERMARK", 0L)
+            val prefs = getSharedPreferences(SYNC_PREFS_NAME, Context.MODE_PRIVATE)
+            val lastWatermark = prefs.getLong(KEY_HIGH_WATERMARK, 0L)
             
             android.util.Log.d("dSIM_SyncBug", "开始同步: isIncremental=$isIncremental, watermark=$lastWatermark")
 
@@ -340,7 +407,13 @@ class MainActivity : AppCompatActivity() {
 
                     if (messagesToSync.isEmpty()) {
                         withContext(Dispatchers.Main) {
-                            tvReport.append(if (isIncremental) "\n✅ 增量检查：水位线之上无新数据。" else "\n✅ 数据库为空。")
+                            tvReport.append(
+                                if (isIncremental) {
+                                    "\n✅ 增量检查：水位线之上无新数据。"
+                                } else {
+                                    "\n✅ 私有数据库为空。云端同步按钮不会读取本机系统短信；如需重建，请去【正式设置】->【系统历史短信】，用【开始导入历史短信】处理。若刚清空过私有库，可先点【重置本机读取进度】。"
+                                }
+                            )
                         }
                         return@launch
                     }
@@ -355,7 +428,11 @@ class MainActivity : AppCompatActivity() {
                     for ((index, msg) in messagesToSync.withIndex()) {
                         try {
                             val targetPhone = configs.firstOrNull { it.mappingKey == msg.mappingKey }?.phoneNumber ?: "未知云端号码"
-                            val payload = SyncPayload(msg, targetPhone)
+                            val payload = SyncPayload(
+                                sms = msg,
+                                remarkPhone = targetPhone,
+                                deviceName = DeviceNameManager.getDisplayName(this@MainActivity)
+                            )
                             val json = com.google.gson.Gson().toJson(payload)
                             val encryptedBase64 = DsimCryptoUtils.encryptMessage(json, currentPassword)
                             
@@ -378,7 +455,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     
-                    prefs.edit().putLong("HIGH_WATERMARK", newWatermark).apply()
+                    prefs.edit().putLong(KEY_HIGH_WATERMARK, newWatermark).apply()
                     
                     withContext(Dispatchers.Main) {
                         tvReport.append("\n✅ 发射完毕！成功发送 $successCount 条，水位线已推高。")
@@ -397,7 +474,7 @@ class MainActivity : AppCompatActivity() {
         btnPushFullHistory.setOnClickListener { 
             AlertDialog.Builder(this)
                 .setTitle("警告：全量补发")
-                .setMessage("全量同步将无视水位线，把数据库所有历史记录重发一遍。确定要执行吗？")
+                .setMessage("全量补发只会重发私有数据库里的短信，不会读取本机系统短信。确定要执行吗？")
                 .setPositiveButton("强制全量") { _, _ -> executeSync(isIncremental = false) }
                 .setNegativeButton("取消", null).show()
         }
@@ -412,7 +489,14 @@ class MainActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     if (configs.isEmpty()) {
-                        tvReport.append("\n\n【管理系统】当前数据库为空，无绑定记录。")
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("暂无 SIM 绑定记录")
+                            .setMessage("当前数据库里还没有任何本地绑定记录。\n\n要不要现在开始探测本机 SIM 并进入绑定流程？")
+                            .setPositiveButton("开始绑定") { _, _ ->
+                                startSimBindingFlow()
+                            }
+                            .setNegativeButton("关闭", null)
+                            .show()
                         return@withContext
                     }
 
@@ -511,9 +595,14 @@ class MainActivity : AppCompatActivity() {
                                             manageDialog?.dismiss()
                                             val mockSimData = com.example.dsim.SimHardwareData(
                                                 mappingKey = config.mappingKey,
+                                                deviceId = config.deviceId.ifBlank {
+                                                    HardwareProbeUtils.parseDeviceIdFromMappingKey(config.mappingKey)
+                                                        ?: HardwareProbeUtils.getDeviceId(this@MainActivity)
+                                                },
                                                 autoReadNumber = config.phoneNumber,
                                                 bindMode = if (isTargetRootKey) "ROOT_ICCID" else "NOROOT_DEVICE",
-                                                slotIndex = 0
+                                                slotIndex = config.slotIndex ?: 0,
+                                                subscriptionId = config.subscriptionId
                                             )
                                             showBindDialog(mockSimData, dao)
                                         }
@@ -562,9 +651,15 @@ class MainActivity : AppCompatActivity() {
                     lifecycleScope.launch(Dispatchers.IO) {
                         val dao = com.example.dsim.database.DsimDatabase.getDatabase(this@MainActivity).dsimDao()
                         dao.clearAllSmsMessages()
+                        SystemSmsHistoryImporter.resetImportProgress(this@MainActivity, clearLastImportAt = true)
+                        getSharedPreferences(SYNC_PREFS_NAME, Context.MODE_PRIVATE)
+                            .edit()
+                            .putLong(KEY_HIGH_WATERMARK, 0L)
+                            .apply()
+                        SystemHistoryImportService.clearSnapshot()
                         
                         withContext(Dispatchers.Main) {
-                            tvReport.append("\n\n【数据清理完毕】\n私有数据库(sms_messages)已彻底清空，仿佛一切都没发生过。")
+                            tvReport.append("\n\n【数据清理完毕】\n私有数据库(sms_messages)已清空，历史读取进度和增量同步水位线也已重置。\n现在可以去【正式设置】->【系统历史短信】重新导入本机历史短信。")
                         }
                     }
                 }
@@ -627,6 +722,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         performRootCheck(manualRequest = false)
+        requestMissingPermissionsIfNeeded()
+        lifecycleScope.launch(Dispatchers.IO) {
+            SimConfigIdentityManager.syncLocalConfigs(this@MainActivity)
+        }
     }
 
     private fun performRootCheck(manualRequest: Boolean) {
@@ -642,7 +741,27 @@ class MainActivity : AppCompatActivity() {
         val allGranted = requiredPermissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-        if (allGranted) action() else requestPermissionLauncher.launch(requiredPermissions)
+        if (allGranted) {
+            action()
+        } else {
+            pendingPermissionAction = action
+            requestPermissionLauncher.launch(requiredPermissions)
+        }
+    }
+
+    private fun requestMissingPermissionsIfNeeded() {
+        val missingPermissions = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missingPermissions.isNotEmpty()) {
+            requestPermissionLauncher.launch(missingPermissions.toTypedArray())
+        }
+    }
+
+    private fun startSimBindingFlow() {
+        Toast.makeText(this, "开始探测本机 SIM 并准备进入绑定流程…", Toast.LENGTH_SHORT).show()
+        tvReport.text = "正在探测本机 SIM 并准备进入绑定流程..."
+        checkPermissionAndAction { runHardwareTest() }
     }
 
     private fun runHardwareTest() {
@@ -675,7 +794,7 @@ class MainActivity : AppCompatActivity() {
             val hasActiveDevMode = activeConfigs.any { it.mappingKey.startsWith("DEV_") }
 
             for (simData in simDataList) {
-                val existingConfig = dao.getSimConfigByKey(simData.mappingKey)
+                val existingConfig = findExistingSimConfig(dao, simData)
                 
                 withContext(Dispatchers.Main) {
                     if (existingConfig == null || !existingConfig.isActive) {
@@ -749,7 +868,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("发现未绑定 SIM 卡 (卡槽 ${simData.slotIndex + 1})")
             .setMessage(dialogMessage)
             .setView(layout)
-            .setCancelable(false)
+            .setCancelable(true)
             .setPositiveButton("保存绑定") { _, _ ->
                 val userInputNumber = input.text.toString()
                 val finalNormalizedNumber = GlobalNumberUtils.formatToE164(this@MainActivity, userInputNumber)
@@ -761,7 +880,10 @@ class MainActivity : AppCompatActivity() {
                                 mappingKey = simData.mappingKey,
                                 phoneNumber = finalNormalizedNumber,
                                 bindMode = simData.bindMode,
-                                isActive = true
+                                isActive = true,
+                                deviceId = simData.deviceId,
+                                subscriptionId = simData.subscriptionId,
+                                slotIndex = simData.slotIndex
                             )
                         )
                         withContext(Dispatchers.Main) {
@@ -770,12 +892,57 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private suspend fun findExistingSimConfig(
+        dao: com.example.dsim.database.DsimDao,
+        simData: SimHardwareData
+    ): SimCardConfig? {
+        dao.getSimConfigByKey(simData.mappingKey)?.let { return it }
+
+        simData.subscriptionId?.let { subscriptionId ->
+            dao.getSimConfigByDeviceAndSubscriptionId(simData.deviceId, subscriptionId)?.let { return it }
+        }
+
+        dao.getSimConfigByDeviceAndSlot(simData.deviceId, simData.slotIndex)?.let { return it }
+        return null
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            android.R.id.home -> {
+                finish()
+                true
+            }
+
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showManualDisconnectDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("手动断开云端？")
+            .setMessage("手动断开后，本次运行期间不会自动重连。\n\n你可以再次点击连接恢复，或者重启软件、手机后再按自动连接设置接入。")
+            .setPositiveButton("确认断开") { _, _ ->
+                val intent = Intent(this@MainActivity, MqttSyncService::class.java).apply {
+                    action = MqttSyncService.ACTION_DISCONNECT
+                }
+                androidx.core.content.ContextCompat.startForegroundService(this@MainActivity, intent)
+                Toast.makeText(
+                    this,
+                    "已手动断开，本次不会自动重连",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 
     private fun setLoading(isLoading: Boolean) {
         progressBar.visibility = if (isLoading) View.VISIBLE else View.GONE
-        val buttons = arrayOf(btnStartTest, btnInsertFakeSms, btnReadAllHistory, btnConnectCloud)
+        val buttons = arrayOf(btnStartTest, btnInsertFakeSms, btnReadAllHistory, btnReadDualDbTest, btnConnectCloud)
         buttons.forEach { it.isEnabled = !isLoading }
     }
 }

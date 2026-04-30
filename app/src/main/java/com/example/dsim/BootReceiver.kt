@@ -9,7 +9,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
             val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-            val isAutoConnect = prefs.getBoolean("AUTO_CONNECT", false)
+            val isAutoConnect = CloudSettingsManager.isAutoConnectEnabled(context)
             val broker = prefs.getString("BROKER", "") ?: ""
             val topic = prefs.getString("TOPIC", "")
             val password = prefs.getString("PASSWORD", "")
