@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
-import android.text.InputType
 import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.Menu
@@ -18,11 +17,9 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -240,25 +237,14 @@ class SmsListActivity : AppCompatActivity() {
     }
 
     private fun showCreateConversationDialog() {
-        val input = EditText(this).apply {
-            hint = "输入手机号"
-            inputType = InputType.TYPE_CLASS_PHONE
-        }
+        val dialog = BottomSheetDialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_create_conversation, null)
+        val input = content.findViewById<EditText>(R.id.etCreateConversationPhone)
+        val cancelButton = content.findViewById<TextView>(R.id.tvCancelCreateConversation)
+        val openButton = content.findViewById<TextView>(R.id.tvOpenCreateConversation)
 
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 10)
-            addView(input)
-        }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("新建会话")
-            .setView(container)
-            .setPositiveButton("进入会话", null)
-            .setNegativeButton("取消", null)
-            .show()
-
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        cancelButton.setOnClickListener { dialog.dismiss() }
+        openButton.setOnClickListener {
             val rawAddress = input.text.toString().trim()
             if (rawAddress.isBlank()) {
                 input.error = "请输入手机号"
@@ -269,6 +255,15 @@ class SmsListActivity : AppCompatActivity() {
             openChat(normalizedAddress.ifBlank { rawAddress })
             dialog.dismiss()
         }
+
+        dialog.setContentView(content)
+        dialog.setOnShowListener {
+            val bottomSheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            )
+            bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
+        }
+        dialog.show()
     }
 
     private fun openChat(address: String, targetUuid: String? = null) {
