@@ -21,6 +21,9 @@ object ConversationProfileStore {
     private const val AVATAR_MODE_PREFIX = "avatar_mode_"
     private const val AVATAR_PRESET_PREFIX = "avatar_preset_"
     private const val AVATAR_IMAGE_PREFIX = "avatar_image_"
+    private const val PIN_PRIORITY_PREFIX = "pin_priority_"
+    private const val MIN_PIN_PRIORITY = 1
+    private const val MAX_PIN_PRIORITY = 99
 
     fun load(context: Context, address: String): ConversationProfile {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -72,6 +75,28 @@ object ConversationProfileStore {
             .remove(AVATAR_PRESET_PREFIX + key)
             .remove(AVATAR_IMAGE_PREFIX + key)
             .apply()
+    }
+
+    fun getPinPriority(context: Context, address: String): Int? {
+        val key = buildKey(address)
+        val value = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(PIN_PRIORITY_PREFIX + key, 0)
+        return value.takeIf { it in MIN_PIN_PRIORITY..MAX_PIN_PRIORITY }
+    }
+
+    fun setPinPriority(context: Context, address: String, priority: Int?) {
+        val key = buildKey(address)
+        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        if (priority == null || priority !in MIN_PIN_PRIORITY..MAX_PIN_PRIORITY) {
+            editor.remove(PIN_PRIORITY_PREFIX + key)
+        } else {
+            editor.putInt(PIN_PRIORITY_PREFIX + key, priority)
+        }
+        editor.apply()
+    }
+
+    fun clearPinPriority(context: Context, address: String) {
+        setPinPriority(context, address, null)
     }
 
     private fun buildKey(address: String): String {

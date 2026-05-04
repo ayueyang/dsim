@@ -86,10 +86,26 @@
                         android:textStyle="bold" />
 
                     <TextView
+                        android:id="@+id/tvPinBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="22dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_conversation_pin_badge"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:minWidth="54dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:textColor="#247A7C"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <TextView
                         android:id="@+id/tvTime"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
+                        android:layout_marginStart="8dp"
                         android:includeFontPadding="false"
                         android:textColor="#9AA3AF"
                         android:textSize="12sp" />

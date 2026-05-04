@@ -47,6 +47,11 @@ class SmsListActivity : AppCompatActivity() {
     private var allMessagesCache: List<SmsMessage> = emptyList()
     private var profileEditorState: ProfileEditorState? = null
 
+    private companion object {
+        const val OTP_CONVERSATION_PIN_KEY = "__DSIM_OTP_CONVERSATION__"
+        const val MAX_PIN_PRIORITY = 99
+    }
+
     private val avatarPresets = listOf(
         AvatarPreset("man", "男士", R.drawable.avatar_preset_man),
         AvatarPreset("woman", "女士", R.drawable.avatar_preset_woman),
@@ -251,7 +256,11 @@ class SmsListActivity : AppCompatActivity() {
             items += ConversationListItem.OtpConversation(latestOtp, otpItems.size)
         }
 
-        return items.sortedByDescending { it.sortTimestamp }
+        return items.sortedWith(
+            compareBy<ConversationListItem> {
+                ConversationProfileStore.getPinPriority(this, it.pinKey) ?: Int.MAX_VALUE
+            }.thenByDescending { it.sortTimestamp }
+        )
     }
 
     private fun showCreateConversationDialog() {
@@ -468,6 +477,80 @@ class SmsListActivity : AppCompatActivity() {
 
     private fun openOtpConversation() {
         startActivity(Intent(this, OtpConversationActivity::class.java))
+    }
+
+    private fun showConversationActionsDialog(
+        pinKey: String,
+        displayTitle: String,
+        allowEditProfile: Boolean
+    ): Boolean {
+        val currentPriority = ConversationProfileStore.getPinPriority(this, pinKey)
+        val dialog = BottomSheetDialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_conversation_actions, null)
+        val titleView = content.findViewById<TextView>(R.id.tvConversationActionTitle)
+        val subtitleView = content.findViewById<TextView>(R.id.tvConversationActionSubtitle)
+        val input = content.findViewById<EditText>(R.id.etPinPriority)
+        val savePin = content.findViewById<TextView>(R.id.tvSavePinPriority)
+        val clearPin = content.findViewById<TextView>(R.id.tvClearPinPriority)
+        val editProfile = content.findViewById<TextView>(R.id.tvEditConversationProfile)
+        val cancel = content.findViewById<TextView>(R.id.tvCancelConversationAction)
+
+        titleView.text = displayTitle.ifBlank { "会话操作" }
+        subtitleView.text = "设置置顶优先级，1 最高，数字越大越靠后。"
+        input.setText(currentPriority?.toString().orEmpty())
+        if (currentPriority != null) {
+            input.setSelection(input.text.length)
+        }
+
+        savePin.setOnClickListener {
+            val raw = input.text.toString().trim()
+            if (raw.isBlank() || raw == "0") {
+                ConversationProfileStore.clearPinPriority(this, pinKey)
+                refreshConversationItems()
+                Toast.makeText(this, "已取消置顶", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                return@setOnClickListener
+            }
+
+            val priority = raw.toIntOrNull()
+            if (priority == null || priority !in 1..MAX_PIN_PRIORITY) {
+                input.error = "请输入 1-$MAX_PIN_PRIORITY 的数字，或留空取消置顶"
+                return@setOnClickListener
+            }
+
+            ConversationProfileStore.setPinPriority(this, pinKey, priority)
+            refreshConversationItems()
+            Toast.makeText(this, "已设置置顶 $priority", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        clearPin.setOnClickListener {
+            ConversationProfileStore.clearPinPriority(this, pinKey)
+            refreshConversationItems()
+            Toast.makeText(this, "已取消置顶", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        if (allowEditProfile) {
+            editProfile.visibility = View.VISIBLE
+            editProfile.setOnClickListener {
+                dialog.dismiss()
+                showConversationProfileDialog(pinKey)
+            }
+        } else {
+            editProfile.visibility = View.GONE
+        }
+        cancel.setOnClickListener { dialog.dismiss() }
+
+        dialog.setContentView(content)
+        dialog.setOnShowListener {
+            val bottomSheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            )
+            bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
+        }
+        dialog.show()
+        return true
     }
 
     private fun showConversationProfileDialog(address: String): Boolean {
@@ -697,12 +780,12 @@ class SmsListActivity : AppCompatActivity() {
         }
     }
 
-    sealed class ConversationListItem(val sortTimestamp: Long) {
-        class NormalConversation(val sms: SmsMessage) : ConversationListItem(sms.timestamp)
+    sealed class ConversationListItem(val sortTimestamp: Long, val pinKey: String) {
+        class NormalConversation(val sms: SmsMessage) : ConversationListItem(sms.timestamp, sms.address)
         class OtpConversation(
             val latestOtp: OtpMessageItem,
             val count: Int
-        ) : ConversationListItem(latestOtp.sms.timestamp)
+        ) : ConversationListItem(latestOtp.sms.timestamp, OTP_CONVERSATION_PIN_KEY)
     }
 
     inner class ConversationAdapter(private var list: List<ConversationListItem>) :
@@ -719,6 +802,7 @@ class SmsListActivity : AppCompatActivity() {
             val ivAvatar: ImageView = view.findViewById(R.id.ivAvatar)
             val tvAvatar: TextView = view.findViewById(R.id.tvAvatar)
             val tvSender: TextView = view.findViewById(R.id.tvSender)
+            val tvPinBadge: TextView = view.findViewById(R.id.tvPinBadge)
             val tvSnippet: TextView = view.findViewById(R.id.tvSnippet)
             val tvTime: TextView = view.findViewById(R.id.tvTime)
         }
@@ -750,12 +834,14 @@ class SmsListActivity : AppCompatActivity() {
             val sms = item.sms
             val context = holder.itemView.context
             val profile = ConversationProfileStore.load(holder.itemView.context, sms.address)
-            holder.tvSender.text = buildConversationTitle(sms.address, profile)
+            val title = buildConversationTitle(sms.address, profile)
+            holder.tvSender.text = title
             val snippet = sms.body.replace('\n', ' ').trim()
             holder.tvSnippet.text = PrivacyModeManager.displayMessageText(context, snippet)
             holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(sms.timestamp))
             bindConversationAvatar(holder, sms.address, profile)
+            bindPinBadge(holder, item.pinKey)
             holder.cardConversation.setCardBackgroundColor(Color.WHITE)
             holder.cardConversation.strokeColor = Color.parseColor("#E7ECF2")
 
@@ -763,7 +849,11 @@ class SmsListActivity : AppCompatActivity() {
                 openChat(sms.address)
             }
             holder.itemView.setOnLongClickListener {
-                showConversationProfileDialog(sms.address)
+                showConversationActionsDialog(
+                    pinKey = sms.address,
+                    displayTitle = title,
+                    allowEditProfile = true
+                )
             }
         }
 
@@ -781,13 +871,30 @@ class SmsListActivity : AppCompatActivity() {
                 .format(Date(item.latestOtp.sms.timestamp))
             holder.cardAvatar.setCardBackgroundColor(Color.parseColor("#FFF3D8"))
             holder.tvAvatar.setTextColor(Color.parseColor("#B7791F"))
+            bindPinBadge(holder, item.pinKey)
             holder.cardConversation.setCardBackgroundColor(Color.WHITE)
             holder.cardConversation.strokeColor = Color.parseColor("#F1E4C9")
 
             holder.itemView.setOnClickListener {
                 openOtpConversation()
             }
-            holder.itemView.setOnLongClickListener(null)
+            holder.itemView.setOnLongClickListener {
+                showConversationActionsDialog(
+                    pinKey = OTP_CONVERSATION_PIN_KEY,
+                    displayTitle = "验证码",
+                    allowEditProfile = false
+                )
+            }
+        }
+
+        private fun bindPinBadge(holder: ViewHolder, pinKey: String) {
+            val priority = ConversationProfileStore.getPinPriority(holder.itemView.context, pinKey)
+            if (priority == null) {
+                holder.tvPinBadge.visibility = View.GONE
+                return
+            }
+            holder.tvPinBadge.visibility = View.VISIBLE
+            holder.tvPinBadge.text = "置顶 $priority"
         }
 
         private fun buildConversationTitle(
