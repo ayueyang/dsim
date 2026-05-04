@@ -85,6 +85,9 @@ object PrivacyModeManager {
         if (digits.length <= 7) {
             return raw
         }
+        if (isSmsServiceSender(digits)) {
+            return raw
+        }
 
         val hasPlus = raw.startsWith("+")
         val maskedDigits = when {
@@ -99,6 +102,10 @@ object PrivacyModeManager {
         }
 
         return if (hasPlus) "+$maskedDigits" else maskedDigits
+    }
+
+    private fun isSmsServiceSender(digits: String): Boolean {
+        return digits.startsWith("106")
     }
 
     private fun maskPhoneLikeText(text: String): String {
