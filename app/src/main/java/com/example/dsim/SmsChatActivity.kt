@@ -98,6 +98,7 @@ class SmsChatActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         tvChatTitle.text = buildChatTitle()
+        refreshSenderPaletteMap(activeSimConfigs)
         adapter.notifyDataSetChanged()
         val selectedConfig = activeSimConfigs.firstOrNull { it.mappingKey == selectedMappingKey }
         bindSelectedSenderButton(selectedConfig)

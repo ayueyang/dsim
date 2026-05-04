@@ -3,6 +3,7 @@ package com.example.dsim
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
 
@@ -23,98 +24,45 @@ object SenderColorUtils {
         soft = color("#F2F5F8"),
         strongSoft = color("#E8EDF3"),
         border = color("#D7DEE8"),
-        source = color("#7C8796")
-    )
-
-    private val palettes = listOf(
-        SenderColorPalette(
-            accent = color("#2FA84F"),
-            dark = color("#1F7A3F"),
-            soft = color("#EEF8F1"),
-            strongSoft = color("#DDF6D5"),
-            border = color("#97D8AE"),
-            source = color("#4E8A5A")
-        ),
-        SenderColorPalette(
-            accent = color("#6750A4"),
-            dark = color("#4F3B82"),
-            soft = color("#F4F0FF"),
-            strongSoft = color("#ECE5FF"),
-            border = color("#A996DC"),
-            source = color("#66538F")
-        ),
-        SenderColorPalette(
-            accent = color("#0F8B8D"),
-            dark = color("#0A6668"),
-            soft = color("#EAF7F7"),
-            strongSoft = color("#D7F0F0"),
-            border = color("#87CDCF"),
-            source = color("#247A7C")
-        ),
-        SenderColorPalette(
-            accent = color("#2563EB"),
-            dark = color("#1D4ED8"),
-            soft = color("#EEF4FF"),
-            strongSoft = color("#DDE9FF"),
-            border = color("#9BB8F7"),
-            source = color("#4169B8")
-        ),
-        SenderColorPalette(
-            accent = color("#D97706"),
-            dark = color("#A85B02"),
-            soft = color("#FFF4E5"),
-            strongSoft = color("#FFE8C2"),
-            border = color("#F2BD75"),
-            source = color("#A7651E")
-        ),
-        SenderColorPalette(
-            accent = color("#D9466F"),
-            dark = color("#B83259"),
-            soft = color("#FFF0F5"),
-            strongSoft = color("#FFE0EA"),
-            border = color("#F1A4BA"),
-            source = color("#A74A65")
-        ),
-        SenderColorPalette(
-            accent = color("#0891B2"),
-            dark = color("#0E7490"),
-            soft = color("#E8F8FC"),
-            strongSoft = color("#D7F0F7"),
-            border = color("#8BD3E4"),
-            source = color("#26798D")
-        ),
-        SenderColorPalette(
-            accent = color("#4F46E5"),
-            dark = color("#3730A3"),
-            soft = color("#F0F1FF"),
-            strongSoft = color("#E1E4FF"),
-            border = color("#AAA8F4"),
-            source = color("#5955A8")
-        )
+        source = color("#7C8796"),
+        onAccent = Color.WHITE
     )
 
     fun buildPaletteMap(
         context: Context,
-        configs: List<SimCardConfig>
+        configs: List<SimCardConfig>,
+        extraDeviceKeys: Collection<String> = emptyList()
     ): Map<String, SenderColorPalette> {
-        val assigned = linkedMapOf<String, SenderColorPalette>()
-        val usedIndices = mutableSetOf<Int>()
-        configs.forEach { config ->
-            val key = deviceKeyForSim(context, config)
-            if (key.isBlank() || assigned.containsKey(key)) {
-                return@forEach
-            }
+        val deviceKeys = (configs.map { deviceKeyForSim(context, it) } + extraDeviceKeys)
+            .filter { it.isNotBlank() }
+            .distinct()
 
-            val preferredIndex = paletteIndexForKey(key)
-            val index = if (usedIndices.size < palettes.size) {
-                firstAvailableIndex(preferredIndex, usedIndices)
-            } else {
-                preferredIndex
-            }
-            usedIndices += index
-            assigned[key] = palettes[index]
+        if (!SenderColorPreferenceStore.isColorEnabled(context)) {
+            return deviceKeys.associateWith { neutral }
         }
-        return assigned
+
+        return deviceKeys.associateWith { key ->
+            val accent = SenderColorPreferenceStore.resolveDeviceAccent(context, key, deviceKeys)
+            paletteFromAccent(accent)
+        }
+    }
+
+    fun paletteForDevice(
+        context: Context,
+        deviceKey: String,
+        paletteMap: Map<String, SenderColorPalette> = emptyMap()
+    ): SenderColorPalette {
+        if (!SenderColorPreferenceStore.isColorEnabled(context)) {
+            return neutral
+        }
+        paletteMap[deviceKey]?.let { return it }
+        val knownKeys: Collection<String> = if (paletteMap.isEmpty()) {
+            listOf(deviceKey)
+        } else {
+            paletteMap.keys
+        }
+        val accent = SenderColorPreferenceStore.resolveDeviceAccent(context, deviceKey, knownKeys)
+        return paletteFromAccent(accent)
     }
 
     fun paletteForSim(
@@ -122,8 +70,30 @@ object SenderColorUtils {
         config: SimCardConfig,
         paletteMap: Map<String, SenderColorPalette> = emptyMap()
     ): SenderColorPalette {
-        val key = deviceKeyForSim(context, config)
-        return paletteMap[key] ?: paletteForKey(key)
+        if (!SenderColorPreferenceStore.isColorEnabled(context)) {
+            return neutral
+        }
+
+        SenderColorPreferenceStore.getSimCustomAccent(context, config.mappingKey)?.let {
+            return paletteFromAccent(it)
+        }
+
+        val deviceKey = deviceKeyForSim(context, config)
+        val devicePalette = paletteForDevice(context, deviceKey, paletteMap)
+        return paletteFromAccent(deriveCardAccent(devicePalette.accent, cardIndexForSim(config)))
+    }
+
+    fun paletteForVirtualCard(
+        context: Context,
+        deviceKey: String,
+        slotIndex: Int,
+        paletteMap: Map<String, SenderColorPalette> = emptyMap()
+    ): SenderColorPalette {
+        if (!SenderColorPreferenceStore.isColorEnabled(context)) {
+            return neutral
+        }
+        val devicePalette = paletteForDevice(context, deviceKey, paletteMap)
+        return paletteFromAccent(deriveCardAccent(devicePalette.accent, slotIndex))
     }
 
     fun paletteForMessage(
@@ -136,14 +106,44 @@ object SenderColorUtils {
             return paletteForSim(context, simConfig, paletteMap)
         }
 
+        if (!SenderColorPreferenceStore.isColorEnabled(context)) {
+            return neutral
+        }
+
         val mappingDeviceId = HardwareProbeUtils.parseDeviceIdFromMappingKey(sms.mappingKey).orEmpty()
-        val key = when {
+        val deviceKey = when {
             mappingDeviceId.isNotBlank() -> "device:$mappingDeviceId"
             sms.deviceId.isNotBlank() -> "device:${sms.deviceId}"
-            sms.mappingKey.isNotBlank() -> "mapping:${sms.mappingKey}"
-            else -> "address:${sms.address}"
+            else -> ""
         }
-        return paletteForKey(key)
+        return if (deviceKey.isNotBlank()) {
+            val slotIndex = HardwareProbeUtils.parseSlotIndexFromMappingKey(sms.mappingKey)
+            if (slotIndex != null) {
+                paletteForVirtualCard(context, deviceKey, slotIndex, paletteMap)
+            } else {
+                paletteForDevice(context, deviceKey, paletteMap)
+            }
+        } else {
+            paletteFromAccent(
+                SenderColorPreferenceStore.resolveDeviceAccent(
+                    context = context,
+                    deviceKey = "mapping:${sms.mappingKey.ifBlank { sms.address }}",
+                    knownDeviceKeys = paletteMap.keys
+                )
+            )
+        }
+    }
+
+    fun paletteFromAccent(accent: Int): SenderColorPalette {
+        return SenderColorPalette(
+            accent = accent,
+            dark = shiftValue(accent, 0.72f),
+            soft = blendWithWhite(accent, 0.92f),
+            strongSoft = blendWithWhite(accent, 0.82f),
+            border = blendWithWhite(accent, 0.55f),
+            source = shiftValue(accent, 0.78f),
+            onAccent = readableTextColor(accent)
+        )
     }
 
     fun roundedDrawable(
@@ -183,29 +183,61 @@ object SenderColorUtils {
         }
     }
 
-    private fun paletteForKey(key: String): SenderColorPalette {
-        if (key.isBlank()) {
-            return neutral
-        }
-        return palettes[paletteIndexForKey(key)]
+    fun deviceKeyForProfile(profile: DeviceProfile): String {
+        return profile.deviceId.takeIf { it.isNotBlank() }?.let { "device:$it" }.orEmpty()
     }
 
-    private fun firstAvailableIndex(preferredIndex: Int, usedIndices: Set<Int>): Int {
-        if (preferredIndex !in usedIndices) {
-            return preferredIndex
+    fun cardIndexForSim(config: SimCardConfig): Int {
+        return when {
+            config.slotIndex != null -> config.slotIndex.coerceAtLeast(0)
+            config.subscriptionId != null -> Math.floorMod(config.subscriptionId, 4)
+            else -> Math.floorMod(config.mappingKey.hashCode(), 4)
         }
-
-        for (offset in 1 until palettes.size) {
-            val index = (preferredIndex + offset) % palettes.size
-            if (index !in usedIndices) {
-                return index
-            }
-        }
-        return preferredIndex
     }
 
-    private fun paletteIndexForKey(key: String): Int {
-        return Math.floorMod(key.hashCode(), palettes.size)
+    private fun deriveCardAccent(baseAccent: Int, slotIndex: Int): Int {
+        if (slotIndex <= 0) {
+            return baseAccent
+        }
+
+        val hsv = FloatArray(3)
+        Color.colorToHSV(baseAccent, hsv)
+        val variant = Math.floorMod(slotIndex, 5)
+        val hueOffsets = floatArrayOf(0f, 8f, -8f, 15f, -15f)
+        val saturationFactors = floatArrayOf(1f, 1.05f, 0.94f, 1.08f, 0.9f)
+        val valueFactors = floatArrayOf(1f, 0.86f, 1.05f, 0.94f, 0.9f)
+
+        hsv[0] = (hsv[0] + hueOffsets[variant] + 360f) % 360f
+        hsv[1] = (hsv[1] * saturationFactors[variant]).coerceIn(0.35f, 0.95f)
+        hsv[2] = (hsv[2] * valueFactors[variant]).coerceIn(0.42f, 0.98f)
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun shiftValue(color: Int, factor: Float): Int {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+        hsv[1] = (hsv[1] * 1.04f).coerceIn(0f, 0.96f)
+        hsv[2] = (hsv[2] * factor).coerceIn(0.28f, 0.92f)
+        return Color.HSVToColor(hsv)
+    }
+
+    private fun blendWithWhite(color: Int, whiteRatio: Float): Int {
+        val ratio = whiteRatio.coerceIn(0f, 1f)
+        val keep = 1f - ratio
+        return Color.rgb(
+            (Color.red(color) * keep + 255 * ratio).toInt(),
+            (Color.green(color) * keep + 255 * ratio).toInt(),
+            (Color.blue(color) * keep + 255 * ratio).toInt()
+        )
+    }
+
+    private fun readableTextColor(color: Int): Int {
+        val luminance = (
+            0.299 * Color.red(color) +
+                0.587 * Color.green(color) +
+                0.114 * Color.blue(color)
+            ) / 255.0
+        return if (luminance > 0.62) Color.parseColor("#102033") else Color.WHITE
     }
 
     private fun dp(context: Context, value: Float): Float {

@@ -1,17 +1,23 @@
 package com.example.dsim
 
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -19,6 +25,8 @@ import androidx.lifecycle.lifecycleScope
 import com.example.dsim.database.DeviceHistoryRecord
 import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.DsimDatabase
+import com.example.dsim.database.SimCardConfig
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,8 +41,10 @@ class DeviceManagerActivity : AppCompatActivity() {
     private lateinit var btnRefresh: Button
     private lateinit var btnSelectAllOnline: Button
     private lateinit var btnQueueSelected: Button
+    private lateinit var btnToggleColorIdentity: Button
     private lateinit var tvSelectionHint: TextView
     private lateinit var tvRadarSummary: TextView
+    private lateinit var tvColorIdentityStatus: TextView
     private lateinit var currentDeviceContainer: LinearLayout
     private lateinit var historyContainer: LinearLayout
 
@@ -42,6 +52,8 @@ class DeviceManagerActivity : AppCompatActivity() {
     private var statusTickerJob: Job? = null
     private val selectedDeviceIds = linkedSetOf<String>()
     private var latestProfiles: List<DeviceProfile> = emptyList()
+    private var latestSimConfigs: List<SimCardConfig> = emptyList()
+    private var devicePaletteMap: Map<String, SenderColorPalette> = emptyMap()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,14 +68,17 @@ class DeviceManagerActivity : AppCompatActivity() {
         btnRefresh = findViewById(R.id.btnRefreshRadar)
         btnSelectAllOnline = findViewById(R.id.btnSelectAllOnline)
         btnQueueSelected = findViewById(R.id.btnQueueSelected)
+        btnToggleColorIdentity = findViewById(R.id.btnToggleColorIdentity)
         tvSelectionHint = findViewById(R.id.tvSelectionHint)
         tvRadarSummary = findViewById(R.id.tvRadarSummary)
+        tvColorIdentityStatus = findViewById(R.id.tvColorIdentityStatus)
         currentDeviceContainer = findViewById(R.id.deviceListContainer)
         historyContainer = findViewById(R.id.deviceHistoryContainer)
 
         btnRefresh.setOnClickListener { refreshAll() }
         btnSelectAllOnline.setOnClickListener { toggleSelectOnlineDevices() }
         btnQueueSelected.setOnClickListener { enqueueSelectedDevices() }
+        btnToggleColorIdentity.setOnClickListener { toggleColorIdentity() }
 
         lifecycleScope.launch {
             MqttSyncService.radarEventFlow.collect {
@@ -72,6 +87,7 @@ class DeviceManagerActivity : AppCompatActivity() {
         }
 
         updateSelectionUi()
+        updateColorIdentityUi()
     }
 
     override fun onResume() {
@@ -138,11 +154,23 @@ class DeviceManagerActivity : AppCompatActivity() {
     }
 
     private suspend fun renderDashboard(summaryOverride: String? = null) {
-        val (profiles, history) = withContext(Dispatchers.IO) {
+        val dashboardData = withContext(Dispatchers.IO) {
             val dao = DsimDatabase.getDatabase(this@DeviceManagerActivity).dsimDao()
-            dao.getAllDeviceProfiles() to dao.getRecentDeviceHistory(20)
+            DashboardData(
+                profiles = dao.getAllDeviceProfiles(),
+                history = dao.getRecentDeviceHistory(20),
+                simConfigs = dao.getAllSimConfigsForUi()
+            )
         }
+        val profiles = dashboardData.profiles
+        val history = dashboardData.history
         latestProfiles = profiles
+        latestSimConfigs = dashboardData.simConfigs
+        devicePaletteMap = SenderColorUtils.buildPaletteMap(
+            context = this,
+            configs = latestSimConfigs,
+            extraDeviceKeys = profiles.map { SenderColorUtils.deviceKeyForProfile(it) }
+        )
 
         val now = System.currentTimeMillis()
         val onlineCount = profiles.count { !it.isLocalDevice && DeviceDirectoryManager.isOnline(it, now) }
@@ -184,7 +212,14 @@ class DeviceManagerActivity : AppCompatActivity() {
         }
 
         updateSelectionUi()
+        updateColorIdentityUi()
     }
+
+    private data class DashboardData(
+        val profiles: List<DeviceProfile>,
+        val history: List<DeviceHistoryRecord>,
+        val simConfigs: List<SimCardConfig>
+    )
 
     private fun toggleSelectOnlineDevices() {
         val now = System.currentTimeMillis()
@@ -269,6 +304,29 @@ class DeviceManagerActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleColorIdentity() {
+        val nextEnabled = !SenderColorPreferenceStore.isColorEnabled(this)
+        SenderColorPreferenceStore.setColorEnabled(this, nextEnabled)
+        lifecycleScope.launch {
+            renderDashboard(if (nextEnabled) "颜色标识已开启" else "颜色标识已关闭，界面恢复统一默认色")
+        }
+    }
+
+    private fun updateColorIdentityUi() {
+        val enabled = SenderColorPreferenceStore.isColorEnabled(this)
+        tvColorIdentityStatus.text = if (enabled) {
+            "已开启 · 设备主色 + 卡槽相近色"
+        } else {
+            "已关闭 · 所有号码恢复统一默认色"
+        }
+        tvColorIdentityStatus.setTextColor(Color.parseColor(if (enabled) "#247A7C" else "#66758A"))
+        btnToggleColorIdentity.text = if (enabled) "关闭" else "开启"
+        btnToggleColorIdentity.backgroundTintList = ColorStateList.valueOf(
+            Color.parseColor(if (enabled) "#EAF7F7" else "#123B48")
+        )
+        btnToggleColorIdentity.setTextColor(Color.parseColor(if (enabled) "#123B48" else "#FFFFFF"))
+    }
+
     private fun sendRadarPing(): Boolean {
         val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
         val password = prefs.getString("PASSWORD", "") ?: ""
@@ -301,6 +359,9 @@ class DeviceManagerActivity : AppCompatActivity() {
 
     private fun createDeviceCard(profile: DeviceProfile, now: Long): View {
         val card = createCardContainer()
+        val deviceKey = SenderColorUtils.deviceKeyForProfile(profile)
+        val devicePalette = SenderColorUtils.paletteForDevice(this, deviceKey, devicePaletteMap)
+        val deviceSims = getSimsForDevice(profile)
         val isOnline = profile.isLocalDevice || DeviceDirectoryManager.isOnline(profile, now)
         val sourceText = if (profile.isLocalDevice) "本机设备" else "云端设备"
         val statusText = when {
@@ -330,11 +391,38 @@ class DeviceManagerActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
+        headerRow.addView(createColorDot(devicePalette.accent, 12))
         headerRow.addView(titleView)
         headerRow.addView(createBadge(statusText, statusColor))
         headerRow.addView(createSpacer(8))
         headerRow.addView(createBadge(queueText, queueColor))
         card.addView(headerRow)
+
+        card.addView(createDeviceColorPreview(profile, deviceSims, devicePalette))
+
+        val colorActionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        colorActionRow.addView(
+            createMutedText(
+                if (SenderColorPreferenceStore.isColorEnabled(this)) {
+                    "颜色用于区分设备和卡槽"
+                } else {
+                    "颜色标识已关闭"
+                }
+            ).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(0, 0, dp(8), 0)
+            }
+        )
+        colorActionRow.addView(createOutlineButton("颜色设置").apply {
+            setOnClickListener {
+                showDeviceColorSheet(profile, deviceSims)
+            }
+        })
+        card.addView(colorActionRow)
 
         if (selectable || selectedDeviceIds.contains(profile.deviceId)) {
             val checkBox = CheckBox(this).apply {
@@ -401,6 +489,358 @@ class DeviceManagerActivity : AppCompatActivity() {
         return card
     }
 
+    private fun createDeviceColorPreview(
+        profile: DeviceProfile,
+        sims: List<SimCardConfig>,
+        devicePalette: SenderColorPalette
+    ): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        row.addView(
+            TextView(this).apply {
+                text = "颜色："
+                setTextColor(Color.parseColor("#66758A"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            }
+        )
+        row.addView(createColorDot(devicePalette.accent, 18))
+
+        if (sims.isNotEmpty()) {
+            sims.forEachIndexed { index, config ->
+                val palette = SenderColorUtils.paletteForSim(this, config, devicePaletteMap)
+                row.addView(
+                    createColorChip(
+                        text = buildSlotLabel(config).ifBlank { "卡${index + 1}" },
+                        color = palette.accent
+                    )
+                )
+            }
+        } else {
+            repeat(profile.simCount.coerceAtMost(4)) { index ->
+                val palette = SenderColorUtils.paletteForVirtualCard(
+                    context = this,
+                    deviceKey = SenderColorUtils.deviceKeyForProfile(profile),
+                    slotIndex = index,
+                    paletteMap = devicePaletteMap
+                )
+                row.addView(createColorChip("卡${index + 1}", palette.accent))
+            }
+        }
+
+        return row
+    }
+
+    private fun showDeviceColorSheet(profile: DeviceProfile, sims: List<SimCardConfig>) {
+        val deviceKey = SenderColorUtils.deviceKeyForProfile(profile)
+        if (deviceKey.isBlank()) {
+            Toast.makeText(this, "设备缺少ID，暂时不能设置颜色", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialog = BottomSheetDialog(this)
+        val scrollView = ScrollView(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(18))
+            setBackgroundResource(R.drawable.bg_sender_sheet)
+        }
+        scrollView.addView(
+            content,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        content.addView(createSheetHandle())
+        content.addView(
+            TextView(this).apply {
+                text = "颜色设置"
+                setTextColor(Color.parseColor("#17212B"))
+                setTypeface(typeface, Typeface.BOLD)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            }
+        )
+        content.addView(
+            createMutedText("${profile.deviceName} · 设备主色会自动派生相近卡色").apply {
+                setPadding(0, dp(6), 0, dp(8))
+            }
+        )
+
+        content.addView(createSectionTitle("设备主色"))
+        content.addView(createDeviceColorSummary(profile, sims))
+        content.addView(
+            createPresetRow { accent ->
+                SenderColorPreferenceStore.setDeviceCustomAccent(this, deviceKey, accent)
+                refreshAfterColorChange(dialog, "设备颜色已更新")
+            }
+        )
+
+        val customDeviceInput = createHexInput("#2FA84F")
+        content.addView(
+            createInputActionRow(customDeviceInput, "应用自定义") {
+                applyHexColor(customDeviceInput) { accent ->
+                    SenderColorPreferenceStore.setDeviceCustomAccent(this, deviceKey, accent)
+                    refreshAfterColorChange(dialog, "设备自定义颜色已保存")
+                }
+            }
+        )
+
+        val deviceActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, dp(4))
+        }
+        deviceActions.addView(createOutlineButton("使用自动色").apply {
+            setOnClickListener {
+                SenderColorPreferenceStore.useAutomaticDeviceColor(
+                    context = this@DeviceManagerActivity,
+                    deviceKey = deviceKey,
+                    knownDeviceKeys = latestProfiles.map { SenderColorUtils.deviceKeyForProfile(it) }
+                )
+                refreshAfterColorChange(dialog, "已切回自动色")
+            }
+        })
+        deviceActions.addView(createSpacer(8))
+        deviceActions.addView(createOutlineButton("恢复默认").apply {
+            setOnClickListener {
+                SenderColorPreferenceStore.resetDeviceColor(
+                    context = this@DeviceManagerActivity,
+                    deviceKey = deviceKey,
+                    simMappingKeys = sims.map { it.mappingKey }
+                )
+                refreshAfterColorChange(dialog, "设备和卡颜色已恢复默认")
+            }
+        })
+        content.addView(deviceActions)
+
+        content.addView(createSectionTitle("单卡颜色"))
+        if (sims.isEmpty()) {
+            content.addView(createMutedText("还没有这台设备的卡配置，刷新或同步后会显示卡槽颜色设置。"))
+        } else {
+            sims.forEach { config ->
+                content.addView(createSimColorEditor(config, dialog))
+            }
+        }
+
+        dialog.setContentView(scrollView)
+        dialog.setOnShowListener {
+            val bottomSheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            )
+            bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
+        }
+        dialog.show()
+    }
+
+    private fun createDeviceColorSummary(profile: DeviceProfile, sims: List<SimCardConfig>): View {
+        val devicePalette = SenderColorUtils.paletteForDevice(
+            this,
+            SenderColorUtils.deviceKeyForProfile(profile),
+            devicePaletteMap
+        )
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(10))
+        }
+        row.addView(createColorDot(devicePalette.accent, 22))
+        row.addView(
+            TextView(this).apply {
+                text = SenderColorPreferenceStore.colorToHex(devicePalette.accent)
+                setTextColor(Color.parseColor("#243246"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTypeface(typeface, Typeface.BOLD)
+            }
+        )
+        row.addView(createSpacer(8))
+        sims.take(3).forEachIndexed { index, config ->
+            row.addView(
+                createColorChip(
+                    text = buildSlotLabel(config).ifBlank { "卡${index + 1}" },
+                    color = SenderColorUtils.paletteForSim(this, config, devicePaletteMap).accent
+                )
+            )
+        }
+        return row
+    }
+
+    private fun createSimColorEditor(config: SimCardConfig, dialog: BottomSheetDialog): View {
+        val palette = SenderColorUtils.paletteForSim(this, config, devicePaletteMap)
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = SenderColorUtils.roundedDrawable(
+                context = this@DeviceManagerActivity,
+                color = Color.parseColor("#F8FAFC"),
+                radiusDp = 16f,
+                strokeColor = Color.parseColor("#E3EAF3"),
+                strokeWidthDp = 1f
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(createColorDot(palette.accent, 18))
+        header.addView(
+            TextView(this).apply {
+                text = listOf(buildSlotLabel(config).ifBlank { "卡" }, DeviceDirectoryManager.formatPhoneNumbers(this@DeviceManagerActivity, config.phoneNumber))
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+                setTextColor(Color.parseColor("#17212B"))
+                setTypeface(typeface, Typeface.BOLD)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        )
+        header.addView(createColorChip("当前", palette.accent))
+        panel.addView(header)
+
+        panel.addView(
+            createPresetRow { accent ->
+                SenderColorPreferenceStore.setSimCustomAccent(this, config.mappingKey, accent)
+                refreshAfterColorChange(dialog, "单卡颜色已更新")
+            }.apply {
+                setPadding(0, dp(8), 0, 0)
+            }
+        )
+
+        val customSimInput = createHexInput("#0F8B8D")
+        panel.addView(
+            createInputActionRow(customSimInput, "应用HEX") {
+                applyHexColor(customSimInput) { accent ->
+                    SenderColorPreferenceStore.setSimCustomAccent(this, config.mappingKey, accent)
+                    refreshAfterColorChange(dialog, "单卡自定义颜色已保存")
+                }
+            }
+        )
+        panel.addView(createOutlineButton("跟随设备").apply {
+            setOnClickListener {
+                SenderColorPreferenceStore.clearSimCustomAccent(this@DeviceManagerActivity, config.mappingKey)
+                refreshAfterColorChange(dialog, "该卡已改为跟随设备色")
+            }
+        })
+        return panel
+    }
+
+    private fun createPresetRow(onSelect: (Int) -> Unit): HorizontalScrollView {
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        SenderColorPreferenceStore.presets.forEach { preset ->
+            val palette = SenderColorUtils.paletteFromAccent(preset.accent)
+            row.addView(
+                TextView(this).apply {
+                    text = preset.name
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                    setTextColor(palette.onAccent)
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    background = SenderColorUtils.roundedDrawable(
+                        context = this@DeviceManagerActivity,
+                        color = preset.accent,
+                        radiusDp = 16f
+                    )
+                    layoutParams = LinearLayout.LayoutParams(dp(54), dp(34)).apply {
+                        rightMargin = dp(8)
+                        topMargin = dp(8)
+                        bottomMargin = dp(8)
+                    }
+                    setOnClickListener { onSelect(preset.accent) }
+                }
+            )
+        }
+        scroll.addView(row)
+        return scroll
+    }
+
+    private fun createInputActionRow(input: EditText, actionText: String, onAction: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        row.addView(input)
+        row.addView(createSpacer(8))
+        row.addView(createFilledButton(actionText).apply {
+            setOnClickListener { onAction() }
+        })
+        return row
+    }
+
+    private fun createHexInput(hint: String): EditText {
+        return EditText(this).apply {
+            this.hint = hint
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSingleLine = true
+            setTextColor(Color.parseColor("#17212B"))
+            setHintTextColor(Color.parseColor("#9AA3AF"))
+            textSize = 14f
+            background = SenderColorUtils.roundedDrawable(
+                context = this@DeviceManagerActivity,
+                color = Color.WHITE,
+                radiusDp = 14f,
+                strokeColor = Color.parseColor("#DDE5EF"),
+                strokeWidthDp = 1f
+            )
+            setPadding(dp(12), 0, dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f)
+        }
+    }
+
+    private fun applyHexColor(input: EditText, onColor: (Int) -> Unit) {
+        val accent = SenderColorPreferenceStore.parseColorInput(input.text.toString())
+        if (accent == null) {
+            Toast.makeText(this, "请输入类似 #2FA84F 的颜色值", Toast.LENGTH_SHORT).show()
+            return
+        }
+        onColor(accent)
+    }
+
+    private fun refreshAfterColorChange(dialog: BottomSheetDialog, message: String) {
+        dialog.dismiss()
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            renderDashboard(message)
+        }
+    }
+
+    private fun getSimsForDevice(profile: DeviceProfile): List<SimCardConfig> {
+        val deviceKey = SenderColorUtils.deviceKeyForProfile(profile)
+        return latestSimConfigs
+            .filter { it.isActive && SenderColorUtils.deviceKeyForSim(this, it) == deviceKey }
+            .sortedWith(
+                compareBy<SimCardConfig>(
+                    { it.slotIndex ?: Int.MAX_VALUE },
+                    { it.subscriptionId ?: Int.MAX_VALUE },
+                    { it.phoneNumber }
+                )
+            )
+    }
+
+    private fun buildSlotLabel(config: SimCardConfig): String {
+        return when {
+            config.slotIndex != null -> "卡${config.slotIndex + 1}"
+            config.subscriptionId != null -> "Sub${config.subscriptionId}"
+            else -> ""
+        }
+    }
+
     private fun createHistoryCard(record: DeviceHistoryRecord): View {
         val card = createCardContainer()
 
@@ -430,6 +870,101 @@ class DeviceManagerActivity : AppCompatActivity() {
         )
         card.addView(createMutedText(body))
         return card
+    }
+
+    private fun createSheetHandle(): View {
+        return View(this).apply {
+            background = SenderColorUtils.roundedDrawable(
+                context = this@DeviceManagerActivity,
+                color = Color.parseColor("#D9DEE8"),
+                radiusDp = 999f
+            )
+            layoutParams = LinearLayout.LayoutParams(dp(38), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(18)
+            }
+        }
+    }
+
+    private fun createSectionTitle(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor("#122033"))
+            setTypeface(typeface, Typeface.BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding(0, dp(12), 0, dp(2))
+        }
+    }
+
+    private fun createColorDot(color: Int, sizeDp: Int): TextView {
+        return TextView(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+                setStroke(dp(1), SenderColorUtils.paletteFromAccent(color).border)
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply {
+                rightMargin = dp(8)
+            }
+        }
+    }
+
+    private fun createColorChip(text: String, color: Int): TextView {
+        val palette = SenderColorUtils.paletteFromAccent(color)
+        return TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setTextColor(palette.onAccent)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(dp(9), dp(5), dp(9), dp(5))
+            background = SenderColorUtils.roundedDrawable(
+                context = this@DeviceManagerActivity,
+                color = color,
+                radiusDp = 999f
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                rightMargin = dp(6)
+            }
+        }
+    }
+
+    private fun createOutlineButton(text: String): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 13f
+            setAllCaps(false)
+            setTextColor(Color.parseColor("#123B48"))
+            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EAF0F7"))
+            minWidth = 0
+            minHeight = 0
+            setPadding(dp(12), 0, dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(38)
+            )
+        }
+    }
+
+    private fun createFilledButton(text: String): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 13f
+            setAllCaps(false)
+            setTextColor(Color.WHITE)
+            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#123B48"))
+            minWidth = 0
+            minHeight = 0
+            setPadding(dp(12), 0, dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(42)
+            )
+        }
     }
 
     private fun createCardContainer(): LinearLayout {
