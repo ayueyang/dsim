@@ -2,79 +2,91 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F6F2EA"
+    android:background="#F2F5F8"
     android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#FFFFFF"
-        android:elevation="3dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="18dp"
-        android:paddingTop="14dp"
-        android:paddingEnd="18dp"
-        android:paddingBottom="14dp">
-
-        <TextView
-            android:id="@+id/tvBackOtp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true"
-            android:padding="8dp"
-            android:text="←"
-            android:textColor="#111827"
-            android:textSize="24sp" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/tvRuleSettings"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="#EEE6D8"
-            android:paddingStart="14dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="14dp"
-            android:paddingBottom="8dp"
-            android:text="规则"
-            android:textColor="#4B5563"
-            android:textSize="13sp" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#FFFFFF"
+        android:background="@drawable/bg_home_header"
+        android:elevation="2dp"
         android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingTop="14dp"
-        android:paddingEnd="24dp"
-        android:paddingBottom="18dp">
+        android:paddingStart="22dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="22dp"
+        android:paddingBottom="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="验证码"
-            android:textColor="#111827"
-            android:textSize="32sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvBackOtp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="←"
+                android:textColor="#123B48"
+                android:textSize="25sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:text="验证码"
+                    android:textColor="#121826"
+                    android:textSize="30sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvOtpSubtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:includeFontPadding="false"
+                    android:text="自动聚合验证码短信"
+                    android:textColor="#7A8696"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvRuleSettings"
+                android:layout_width="72dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_home_settings_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="规则"
+                android:textColor="#123B48"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
 
     <TextView
         android:id="@+id/tvOtpEmpty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="14dp"
         android:layout_marginTop="16dp"
-        android:layout_marginEnd="24dp"
-        android:background="#FFFFFF"
+        android:layout_marginEnd="14dp"
+        android:background="@drawable/bg_otp_empty_card"
         android:gravity="center"
         android:padding="24dp"
         android:text="还没有识别到验证码短信"
@@ -88,7 +100,9 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
+        android:paddingStart="10dp"
         android:paddingTop="10dp"
+        android:paddingEnd="10dp"
         android:paddingBottom="24dp" />
 
 </LinearLayout>

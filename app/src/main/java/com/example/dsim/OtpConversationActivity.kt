@@ -3,6 +3,8 @@ package com.example.dsim
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.LayoutInflater
@@ -32,6 +34,7 @@ class OtpConversationActivity : AppCompatActivity() {
 
     private lateinit var rvOtpMessages: RecyclerView
     private lateinit var tvOtpEmpty: TextView
+    private lateinit var tvOtpSubtitle: TextView
     private lateinit var tvRuleSettings: TextView
     private lateinit var layoutManager: LinearLayoutManager
     private lateinit var adapter: OtpAdapter
@@ -41,10 +44,16 @@ class OtpConversationActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.parseColor("#123B48")
+        window.navigationBarColor = Color.WHITE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         setContentView(R.layout.activity_otp_conversation)
 
         rvOtpMessages = findViewById(R.id.rvOtpMessages)
         tvOtpEmpty = findViewById(R.id.tvOtpEmpty)
+        tvOtpSubtitle = findViewById(R.id.tvOtpSubtitle)
         tvRuleSettings = findViewById(R.id.tvRuleSettings)
 
         findViewById<TextView>(R.id.tvBackOtp).setOnClickListener { finish() }
@@ -70,6 +79,11 @@ class OtpConversationActivity : AppCompatActivity() {
         val otpItems = OtpConversationUtils.buildOtpItems(this, allMessagesCache)
         adapter.updateData(otpItems)
         tvOtpEmpty.visibility = if (otpItems.isEmpty()) View.VISIBLE else View.GONE
+        tvOtpSubtitle.text = when {
+            otpItems.isEmpty() -> "自动聚合验证码短信"
+            otpItems.size == 1 -> "1 条验证码 · 最新在下面"
+            else -> "${otpItems.size} 条验证码 · 最新在下面"
+        }
 
         if (otpItems.isNotEmpty() && (firstRender || shouldStickToBottom())) {
             rvOtpMessages.post {
@@ -266,7 +280,7 @@ class OtpConversationActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
             holder.tvSender.text = item.senderLabel
-            holder.tvTime.text = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(item.sms.timestamp))
             holder.tvSource.text = item.sourceLabel
             holder.tvCode.text = item.code
