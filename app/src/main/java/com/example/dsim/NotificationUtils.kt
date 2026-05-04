@@ -63,7 +63,8 @@ object NotificationUtils {
         val targetChannel = if (isMuted) CHANNEL_SILENT else CHANNEL_LOUD
         val targetPriority = if (isMuted) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX
 
-        val title = remarkName ?: sms.address
+        val title = PrivacyModeManager.displayPhone(context, remarkName ?: sms.address)
+            .ifBlank { sms.address }
         val intent = Intent(context, SmsChatActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("CHAT_ADDRESS", sms.address)

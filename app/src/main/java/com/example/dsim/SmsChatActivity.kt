@@ -8,10 +8,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,7 +44,7 @@ class SmsChatActivity : AppCompatActivity() {
     private lateinit var rvChatMessages: RecyclerView
     private lateinit var btnSelectSim: Button
     private lateinit var etSmsInput: EditText
-    private lateinit var btnSendSms: Button
+    private lateinit var btnSendSms: ImageButton
     private lateinit var tvChatTitle: TextView
 
     companion object {
@@ -52,6 +53,11 @@ class SmsChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.parseColor("#123B48")
+        window.navigationBarColor = Color.WHITE
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         setContentView(R.layout.activity_sms_chat)
 
         address = intent.getStringExtra("CHAT_ADDRESS") ?: "未知会话"
@@ -63,7 +69,7 @@ class SmsChatActivity : AppCompatActivity() {
         etSmsInput = findViewById(R.id.etSmsInput)
         btnSendSms = findViewById(R.id.btnSendSms)
 
-        tvChatTitle.text = address
+        tvChatTitle.text = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
 
         layoutManager = LinearLayoutManager(this).apply {
             stackFromEnd = true
@@ -82,6 +88,16 @@ class SmsChatActivity : AppCompatActivity() {
 
         btnSelectSim.setOnClickListener { showSimSelector() }
         btnSendSms.setOnClickListener { sendCommand() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        tvChatTitle.text = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        adapter.notifyDataSetChanged()
+        val selectedConfig = activeSimConfigs.firstOrNull { it.mappingKey == selectedMappingKey }
+        if (selectedConfig != null) {
+            btnSelectSim.text = buildSelectedSenderLabel(selectedConfig)
+        }
     }
 
     private fun loadMessages() {
@@ -138,11 +154,15 @@ class SmsChatActivity : AppCompatActivity() {
                     return@withContext
                 }
 
-                val displayItems = activeSimConfigs.map(::buildSenderDisplay).toTypedArray()
-                AlertDialog.Builder(this@SmsChatActivity)
-                    .setTitle("选择发送号码")
-                    .setItems(displayItems) { _, which ->
-                        val selected = activeSimConfigs[which]
+                val dialog = BottomSheetDialog(this@SmsChatActivity)
+                val content = layoutInflater.inflate(R.layout.dialog_sender_selector, null)
+                val rvOptions = content.findViewById<RecyclerView>(R.id.rvSenderOptions)
+                val tvSubtitle = content.findViewById<TextView>(R.id.tvSenderSheetSubtitle)
+                val tvCancel = content.findViewById<TextView>(R.id.tvCancelSenderSheet)
+
+                tvSubtitle.text = buildSenderSheetSubtitle(activeSimConfigs)
+                rvOptions.layoutManager = LinearLayoutManager(this@SmsChatActivity)
+                rvOptions.adapter = SenderOptionAdapter(activeSimConfigs, selectedMappingKey) { selected ->
                         selectedMappingKey = selected.mappingKey
                         btnSelectSim.text = buildSelectedSenderLabel(selected)
                         Toast.makeText(
@@ -150,11 +170,29 @@ class SmsChatActivity : AppCompatActivity() {
                             "已选择: ${buildSenderDisplay(selected)}",
                             Toast.LENGTH_SHORT
                         ).show()
+                        dialog.dismiss()
                     }
-                    .setNegativeButton("取消", null)
-                    .show()
+
+                tvCancel.setOnClickListener { dialog.dismiss() }
+                dialog.setContentView(content)
+                dialog.setOnShowListener {
+                    val bottomSheet = dialog.findViewById<View>(
+                        com.google.android.material.R.id.design_bottom_sheet
+                    )
+                    bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
+                }
+                dialog.show()
             }
         }
+    }
+
+    private fun buildSenderSheetSubtitle(configs: List<SimCardConfig>): String {
+        val localCount = configs.count { it.bindMode != "REMOTE_SHADOW" }
+        val cloudCount = configs.count { it.bindMode == "REMOTE_SHADOW" }
+        return listOfNotNull(
+            localCount.takeIf { it > 0 }?.let { "本机 $it 张" },
+            cloudCount.takeIf { it > 0 }?.let { "云端 $it 张" }
+        ).joinToString(" · ")
     }
 
     private fun buildSenderDisplay(config: SimCardConfig): String {
@@ -165,17 +203,17 @@ class SmsChatActivity : AppCompatActivity() {
             ""
         }
         val slotLabel = buildSlotLabel(config)
-        val phone = sanitizePhoneNumber(config.phoneNumber)
+        val phone = displayPhoneNumber(config.phoneNumber)
         return listOf(location, deviceLabel, slotLabel, phone)
             .filter { it.isNotBlank() }
             .joinToString(" ")
     }
 
     private fun buildSelectedSenderLabel(config: SimCardConfig): String {
+        val phoneTail = PrivacyModeManager.normalizePhone(config.phoneNumber).takeLast(4)
         return listOf(
             if (config.bindMode == "REMOTE_SHADOW") "云端" else "本机",
-            buildSlotLabel(config),
-            sanitizePhoneNumber(config.phoneNumber)
+            buildSlotLabel(config).ifBlank { phoneTail }
         ).filter { it.isNotBlank() }.joinToString(" ")
     }
 
@@ -206,7 +244,35 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun sanitizePhoneNumber(phoneNumber: String): String {
-        return phoneNumber.removeSuffix("(云端)").trim()
+        return PrivacyModeManager.normalizePhone(phoneNumber)
+    }
+
+    private fun displayPhoneNumber(phoneNumber: String): String {
+        return PrivacyModeManager.displayPhone(this, phoneNumber)
+    }
+
+    private fun buildSenderOptionTitle(config: SimCardConfig): String {
+        val slotLabel = buildSlotLabel(config)
+        return if (config.bindMode == "REMOTE_SHADOW") {
+            val deviceLabel = config.alias?.trim().takeUnless { it.isNullOrBlank() }
+                ?: buildFallbackDeviceLabel(config.deviceId)
+            listOf("云端", deviceLabel).joinToString(" · ")
+        } else {
+            listOf("本机", slotLabel.ifBlank { "号码" }).joinToString(" · ")
+        }
+    }
+
+    private fun buildSenderOptionMeta(config: SimCardConfig): String {
+        val slotLabel = buildSlotLabel(config)
+        return if (config.bindMode == "REMOTE_SHADOW") {
+            listOf("远程发送", slotLabel)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
+        } else {
+            listOf("当前设备", slotLabel)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
+        }
     }
 
     private fun sendCommand() {
@@ -221,10 +287,12 @@ class SmsChatActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
+            var pendingUuid: String? = null
             try {
                 val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
                 val password = prefs.getString("PASSWORD", "") ?: ""
                 val topic = prefs.getString("TOPIC", "") ?: ""
+                val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
 
                 if (password.isBlank() || topic.isBlank()) {
                     withContext(Dispatchers.Main) {
@@ -241,6 +309,21 @@ class SmsChatActivity : AppCompatActivity() {
                 }
 
                 val uuid = UUID.randomUUID().toString()
+                pendingUuid = uuid
+                val sentMsg = SmsMessage(
+                    uuid = uuid,
+                    address = address,
+                    body = body,
+                    timestamp = System.currentTimeMillis(),
+                    type = 2,
+                    status = 0,
+                    deviceId = HardwareProbeUtils.getDeviceId(this@SmsChatActivity),
+                    simId = -1,
+                    iccid = null,
+                    mappingKey = selectedMappingKey!!
+                )
+                dao.insertMessage(sentMsg)
+
                 val cmdJson = JSONObject().apply {
                     put("action", "SEND_CMD")
                     put("target", address)
@@ -255,31 +338,68 @@ class SmsChatActivity : AppCompatActivity() {
                 }
                 MqttSyncService.globalMqttClient?.publish(topic, message)
 
-                val sentMsg = SmsMessage(
-                    uuid = uuid,
-                    address = address,
-                    body = body,
-                    timestamp = System.currentTimeMillis(),
-                    type = 2,
-                    status = 0,
-                    deviceId = HardwareProbeUtils.getDeviceId(this@SmsChatActivity),
-                    simId = -1,
-                    iccid = null,
-                    mappingKey = selectedMappingKey!!
-                )
-                DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao().insertMessage(sentMsg)
-
                 withContext(Dispatchers.Main) {
                     etSmsInput.text.clear()
                     Toast.makeText(this@SmsChatActivity, "发送指令已下发", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
+                pendingUuid?.let {
+                    DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
+                        .updateMessageStatus(it, -1, e.message)
+                }
                 android.util.Log.e("dSIM_Chat", "发送异常", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@SmsChatActivity, "发送失败: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    inner class SenderOptionAdapter(
+        private val configs: List<SimCardConfig>,
+        private val selectedKey: String?,
+        private val onSelect: (SimCardConfig) -> Unit
+    ) : RecyclerView.Adapter<SenderOptionAdapter.ViewHolder>() {
+
+        inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val card: MaterialCardView = view.findViewById(R.id.cardSenderOption)
+            val badge: TextView = view.findViewById(R.id.tvSenderBadge)
+            val title: TextView = view.findViewById(R.id.tvSenderTitle)
+            val phone: TextView = view.findViewById(R.id.tvSenderPhone)
+            val meta: TextView = view.findViewById(R.id.tvSenderMeta)
+            val selected: TextView = view.findViewById(R.id.tvSenderSelected)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_sender_option, parent, false)
+            return ViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            val config = configs[position]
+            val isCloud = config.bindMode == "REMOTE_SHADOW"
+            val isSelected = config.mappingKey == selectedKey
+            val density = holder.itemView.resources.displayMetrics.density
+
+            holder.badge.text = if (isCloud) "云" else "本"
+            holder.badge.setBackgroundResource(
+                if (isCloud) R.drawable.bg_sender_badge_cloud else R.drawable.bg_sender_badge_local
+            )
+            holder.title.text = buildSenderOptionTitle(config)
+            holder.phone.text = displayPhoneNumber(config.phoneNumber).ifBlank { "未填写号码" }
+            holder.meta.text = buildSenderOptionMeta(config)
+            holder.selected.visibility = if (isSelected) View.VISIBLE else View.GONE
+
+            holder.card.setCardBackgroundColor(
+                Color.parseColor(if (isSelected) "#F4F0FF" else "#F8FAFC")
+            )
+            holder.card.strokeColor = Color.parseColor(if (isSelected) "#6750A4" else "#E5EAF1")
+            holder.card.strokeWidth = (density * if (isSelected) 1.6f else 1f).toInt()
+            holder.card.setOnClickListener { onSelect(config) }
+        }
+
+        override fun getItemCount(): Int = configs.size
     }
 
     inner class ChatAdapter(private var list: List<SmsMessage>) :
@@ -289,6 +409,19 @@ class SmsChatActivity : AppCompatActivity() {
 
         fun updateData(newList: List<SmsMessage>) {
             list = newList
+                .groupBy { it.uuid.ifBlank { "row-${it.id}" } }
+                .map { (_, duplicates) ->
+                    duplicates.maxWith(
+                        compareBy<SmsMessage> {
+                            when (it.status) {
+                                1 -> 2
+                                0 -> 1
+                                else -> 0
+                            }
+                        }.thenBy { it.timestamp }
+                    )
+                }
+                .sortedBy { it.timestamp }
             notifyDataSetChanged()
         }
 
@@ -326,24 +459,38 @@ class SmsChatActivity : AppCompatActivity() {
                 mappingKey = sms.mappingKey,
                 simConfig = simConfig,
                 isLocalMessage = isLocalMessage,
-                localDeviceName = DeviceNameManager.getDisplayName(holder.itemView.context)
+                localDeviceName = DeviceNameManager.getDisplayName(holder.itemView.context),
+                maskPhoneNumbers = PrivacyModeManager.isEnabled(holder.itemView.context)
             )
 
             val params = holder.bubbleContainer.layoutParams as LinearLayout.LayoutParams
             if (sms.type == 2) {
                 params.gravity = Gravity.END
-                holder.cardBubble.setCardBackgroundColor(Color.parseColor("#95EC69"))
-                holder.tvChatBody.setTextColor(Color.BLACK)
+                holder.cardBubble.setCardBackgroundColor(Color.parseColor("#DDF6D5"))
+                holder.tvChatBody.setTextColor(Color.parseColor("#1B3520"))
+                holder.tvChatSource.setTextColor(Color.parseColor("#6B8F70"))
             } else {
                 params.gravity = Gravity.START
                 holder.cardBubble.setCardBackgroundColor(Color.WHITE)
-                holder.tvChatBody.setTextColor(Color.parseColor("#333333"))
+                holder.tvChatBody.setTextColor(Color.parseColor("#2D3742"))
+                holder.tvChatSource.setTextColor(Color.parseColor("#8A94A3"))
             }
             holder.bubbleContainer.layoutParams = params
 
             val highlight = sms.uuid == highlightUuid
-            holder.cardBubble.strokeWidth = if (highlight) (holder.itemView.resources.displayMetrics.density * 2).toInt() else 0
-            holder.cardBubble.strokeColor = if (highlight) Color.parseColor("#F59E0B") else Color.TRANSPARENT
+            val density = holder.itemView.resources.displayMetrics.density
+            holder.cardBubble.strokeWidth = if (highlight) {
+                (density * 2).toInt()
+            } else if (sms.type == 2) {
+                0
+            } else {
+                (density * 1).toInt()
+            }
+            holder.cardBubble.strokeColor = when {
+                highlight -> Color.parseColor("#F59E0B")
+                sms.type == 2 -> Color.TRANSPARENT
+                else -> Color.parseColor("#E7ECF2")
+            }
         }
 
         override fun getItemCount(): Int = list.size

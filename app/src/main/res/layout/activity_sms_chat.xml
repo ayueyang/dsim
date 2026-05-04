@@ -2,19 +2,22 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#F5F5F5">
+    android:background="#F4F6F8"
+    android:orientation="vertical">
 
     <TextView
         android:id="@+id/tvChatTitle"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
+        android:layout_height="56dp"
         android:background="#FFFFFF"
-        android:elevation="4dp" />
+        android:elevation="2dp"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:singleLine="true"
+        android:textColor="#17212B"
+        android:textSize="20sp"
+        android:textStyle="bold" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChatMessages"
@@ -22,41 +25,74 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:clipToPadding="false"
-        android:padding="8dp" />
+        android:paddingStart="10dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="12dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:background="#FFFFFF"
-        android:elevation="4dp">
+        android:background="#F4F6F8"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="10dp"
+        android:paddingTop="4dp">
 
-        <Button
-            android:id="@+id/btnSelectSim"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="选择发信号码"
-            android:textSize="12sp" />
+            android:background="@drawable/bg_chat_input_panel"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="8dp">
 
-        <EditText
-            android:id="@+id/etSmsInput"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:hint="输入短信..."
-            android:inputType="textMultiLine"
-            android:maxLines="3" />
+            <Button
+                android:id="@+id/btnSelectSim"
+                android:layout_width="112dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_chat_sender_button"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:singleLine="true"
+                android:stateListAnimator="@null"
+                android:text="&#36873;&#25321;&#21457;&#20449;&#21495;&#30721;"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnSendSms"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="发送"
-            android:backgroundTint="#4CAF50" />
+            <EditText
+                android:id="@+id/etSmsInput"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chat_input_field"
+                android:hint="&#36755;&#20837;&#30701;&#20449;..."
+                android:includeFontPadding="false"
+                android:inputType="textMultiLine"
+                android:maxLines="3"
+                android:minHeight="44dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="#17212B"
+                android:textColorHint="#9AA3AF"
+                android:textSize="15sp" />
 
+            <ImageButton
+                android:id="@+id/btnSendSms"
+                android:layout_width="52dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_chat_send_button"
+                android:contentDescription="&#21457;&#36865;"
+                android:padding="10dp"
+                android:scaleType="center"
+                android:src="@drawable/ic_chat_send" />
+        </LinearLayout>
     </LinearLayout>
-
 </LinearLayout>

@@ -653,7 +653,20 @@ class MqttSyncService : Service() {
                 iccid = null,
                 mappingKey = mappingKey
             )
-            dao.insertMessage(sentMsg)
+            if (dao.checkUuidExists(uuid) > 0) {
+                dao.updateSentMessageAfterSend(
+                    uuid = uuid,
+                    timestamp = sentTimestamp,
+                    status = 1,
+                    deviceId = sentMsg.deviceId,
+                    simId = sentMsg.simId,
+                    iccid = sentMsg.iccid,
+                    mappingKey = sentMsg.mappingKey,
+                    error = null
+                )
+            } else {
+                dao.insertMessage(sentMsg)
+            }
             publishEncryptedSms(
                 context = this@MqttSyncService,
                 sms = sentMsg,

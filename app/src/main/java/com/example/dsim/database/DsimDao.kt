@@ -17,6 +17,30 @@ interface DsimDao {
     @Query("UPDATE sms_messages SET status = :newStatus, errorMsg = :error WHERE uuid = :uuid")
     suspend fun updateMessageStatus(uuid: String, newStatus: Int, error: String? = null)
 
+    @Query(
+        """
+        UPDATE sms_messages
+        SET timestamp = :timestamp,
+            status = :status,
+            deviceId = :deviceId,
+            simId = :simId,
+            iccid = :iccid,
+            mappingKey = :mappingKey,
+            errorMsg = :error
+        WHERE uuid = :uuid
+        """
+    )
+    suspend fun updateSentMessageAfterSend(
+        uuid: String,
+        timestamp: Long,
+        status: Int,
+        deviceId: String,
+        simId: Int,
+        iccid: String?,
+        mappingKey: String,
+        error: String? = null
+    )
+
     @Query("UPDATE sms_messages SET mappingKey = :mappingKey WHERE id = :messageId")
     suspend fun updateMessageMappingKey(messageId: Long, mappingKey: String)
 

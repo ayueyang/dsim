@@ -45,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnManageSimSetting: Button
     private lateinit var btnViewDevicesSetting: Button
     private lateinit var switchMuteNotificationsSetting: Switch
+    private lateinit var switchPrivacyModeSetting: Switch
     private lateinit var btnOpenTestTools: Button
     private lateinit var etMqttBrokerSetting: EditText
     private lateinit var etMqttTopicSetting: EditText
@@ -105,6 +106,7 @@ class SettingsActivity : AppCompatActivity() {
         btnManageSimSetting = findViewById(R.id.btnManageSimSetting)
         btnViewDevicesSetting = findViewById(R.id.btnViewDevicesSetting)
         switchMuteNotificationsSetting = findViewById(R.id.switchMuteNotificationsSetting)
+        switchPrivacyModeSetting = findViewById(R.id.switchPrivacyModeSetting)
         btnOpenTestTools = findViewById(R.id.btnOpenTestTools)
         etMqttBrokerSetting = findViewById(R.id.etMqttBrokerSetting)
         etMqttTopicSetting = findViewById(R.id.etMqttTopicSetting)
@@ -268,6 +270,16 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(
                 this,
                 if (isChecked) "新消息通知已静音" else "新消息通知已恢复响铃",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        switchPrivacyModeSetting.isChecked = PrivacyModeManager.isEnabled(this)
+        switchPrivacyModeSetting.setOnCheckedChangeListener { _, isChecked ->
+            PrivacyModeManager.setEnabled(this, isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) "隐私模式已开启，号码将隐藏中间四位" else "隐私模式已关闭，号码将完整显示",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -837,7 +849,7 @@ class SettingsActivity : AppCompatActivity() {
             titleRow.addView(createBadge(queueText, queueColor))
             addView(titleRow)
 
-            addView(createMutedText("号码：${DeviceDirectoryManager.formatPhoneNumbers(profile.phoneNumbers)}"))
+            addView(createMutedText("号码：${DeviceDirectoryManager.formatPhoneNumbers(this@SettingsActivity, profile.phoneNumbers)}"))
             addView(createInfoLine("队列说明", HistorySyncQueueManager.buildQueueDetail(profile, now)))
             addView(
                 createInfoLine(

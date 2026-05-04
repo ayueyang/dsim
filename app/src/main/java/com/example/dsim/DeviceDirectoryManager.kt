@@ -87,6 +87,10 @@ object DeviceDirectoryManager {
         return raw.ifBlank { "未记录" }
     }
 
+    fun formatPhoneNumbers(context: Context, raw: String): String {
+        return PrivacyModeManager.displayPhoneList(context, raw)
+    }
+
     fun formatDeviceId(deviceId: String): String {
         if (deviceId.length <= 14) {
             return deviceId

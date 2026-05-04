@@ -3,6 +3,7 @@ package com.example.dsim
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -25,6 +26,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +40,7 @@ class SmsListActivity : AppCompatActivity() {
     private lateinit var adapter: ConversationAdapter
     private lateinit var setupGuideContainer: View
     private lateinit var tvSetupGuideStatus: TextView
+    private lateinit var tvHomeSubtitle: TextView
     private var allMessagesCache: List<SmsMessage> = emptyList()
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -48,6 +51,11 @@ class SmsListActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.parseColor("#123B48")
+        window.navigationBarColor = Color.WHITE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         setContentView(R.layout.activity_sms_list)
         title = "信息"
         NotificationUtils.createNotificationChannel(this)
@@ -60,6 +68,7 @@ class SmsListActivity : AppCompatActivity() {
         val btnSetupGuideSettings = findViewById<Button>(R.id.btnSetupGuideSettings)
         setupGuideContainer = findViewById(R.id.setupGuideContainer)
         tvSetupGuideStatus = findViewById(R.id.tvSetupGuideStatus)
+        tvHomeSubtitle = findViewById(R.id.tvHomeSubtitle)
 
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = ConversationAdapter(emptyList())
@@ -148,6 +157,11 @@ class SmsListActivity : AppCompatActivity() {
     private fun refreshConversationItems() {
         val items = buildConversationItems(allMessagesCache)
         adapter.updateData(items)
+        tvHomeSubtitle.text = when {
+            items.isEmpty() -> "dSIM 多卡短信同步"
+            items.size == 1 -> "1 个会话 · 多卡同步"
+            else -> "${items.size} 个会话 · 多卡同步"
+        }
     }
 
     private fun buildConversationItems(messages: List<SmsMessage>): List<ConversationListItem> {
@@ -252,6 +266,8 @@ class SmsListActivity : AppCompatActivity() {
         }
 
         inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val cardConversation: MaterialCardView = view.findViewById(R.id.cardConversation)
+            val cardAvatar: MaterialCardView = view.findViewById(R.id.cardAvatar)
             val tvAvatar: TextView = view.findViewById(R.id.tvAvatar)
             val tvSender: TextView = view.findViewById(R.id.tvSender)
             val tvSnippet: TextView = view.findViewById(R.id.tvSnippet)
@@ -283,11 +299,15 @@ class SmsListActivity : AppCompatActivity() {
             item: ConversationListItem.NormalConversation
         ) {
             val sms = item.sms
-            holder.tvSender.text = sms.address
-            holder.tvSnippet.text = sms.body
-            holder.tvAvatar.text = sms.address.take(1).uppercase()
+            holder.tvSender.text = PrivacyModeManager.displayPhone(holder.itemView.context, sms.address)
+                .ifBlank { sms.address }
+            holder.tvSnippet.text = sms.body.replace('\n', ' ').trim()
+            holder.tvAvatar.text = buildAvatarLabel(sms.address)
             holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(sms.timestamp))
+            applyAvatarStyle(holder, sms.address)
+            holder.cardConversation.setCardBackgroundColor(Color.WHITE)
+            holder.cardConversation.strokeColor = Color.parseColor("#E7ECF2")
 
             holder.itemView.setOnClickListener {
                 openChat(sms.address)
@@ -303,10 +323,41 @@ class SmsListActivity : AppCompatActivity() {
             holder.tvAvatar.text = "码"
             holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(item.latestOtp.sms.timestamp))
+            holder.cardAvatar.setCardBackgroundColor(Color.parseColor("#FFF3D8"))
+            holder.tvAvatar.setTextColor(Color.parseColor("#B7791F"))
+            holder.cardConversation.setCardBackgroundColor(Color.parseColor("#FFFCF6"))
+            holder.cardConversation.strokeColor = Color.parseColor("#F1E4C9")
 
             holder.itemView.setOnClickListener {
                 openOtpConversation()
             }
+        }
+
+        private fun buildAvatarLabel(address: String): String {
+            val normalized = PrivacyModeManager.normalizePhone(address)
+            val digits = normalized.filter { it.isDigit() }
+            return when {
+                normalized == "10086" -> "移"
+                normalized == "10010" -> "联"
+                normalized == "10000" -> "电"
+                digits.length >= 4 -> digits.takeLast(2)
+                normalized.length >= 2 -> normalized.take(2).uppercase()
+                else -> normalized.take(1).uppercase().ifBlank { "?" }
+            }
+        }
+
+        private fun applyAvatarStyle(holder: ViewHolder, seed: String) {
+            val palette = listOf(
+                "#E8F4FF" to "#1677C8",
+                "#EAF8F0" to "#218A52",
+                "#F2EDFF" to "#6750A4",
+                "#FFF0E6" to "#B45309",
+                "#EAF7F7" to "#0F766E"
+            )
+            val index = Math.floorMod(seed.hashCode(), palette.size)
+            val (background, foreground) = palette[index]
+            holder.cardAvatar.setCardBackgroundColor(Color.parseColor(background))
+            holder.tvAvatar.setTextColor(Color.parseColor(foreground))
         }
 
         override fun getItemCount() = list.size

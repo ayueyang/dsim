@@ -370,7 +370,7 @@ class DeviceManagerActivity : AppCompatActivity() {
             )
         )
 
-        card.addView(createInfoLine("手机号", DeviceDirectoryManager.formatPhoneNumbers(profile.phoneNumbers)))
+        card.addView(createInfoLine("手机号", DeviceDirectoryManager.formatPhoneNumbers(this, profile.phoneNumbers)))
         card.addView(createInfoLine("电量", formatBattery(profile)))
         card.addView(createInfoLine("默认短信", if (profile.isDefaultSms) "已接管" else "未接管"))
         card.addView(createInfoLine("队列说明", HistorySyncQueueManager.buildQueueDetail(profile, now)))

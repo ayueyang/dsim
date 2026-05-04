@@ -8,7 +8,8 @@ object SmsTagParserUtils {
         mappingKey: String?,
         simConfig: SimCardConfig?,
         isLocalMessage: Boolean,
-        localDeviceName: String
+        localDeviceName: String,
+        maskPhoneNumbers: Boolean = false
     ): String {
         if (mappingKey.isNullOrBlank()) {
             return if (isLocalMessage) {
@@ -64,18 +65,18 @@ object SmsTagParserUtils {
             else -> "未知卡"
         }
 
-        val number = sanitizePhoneNumber(simConfig?.phoneNumber)
+        val number = sanitizePhoneNumber(simConfig?.phoneNumber, maskPhoneNumbers)
         return listOf(locationLabel, deviceLabel, slotLabel, number)
             .filter { it.isNotBlank() }
             .joinToString(" · ")
     }
 
-    private fun sanitizePhoneNumber(phoneNumber: String?): String {
-        val raw = phoneNumber?.trim().orEmpty()
+    private fun sanitizePhoneNumber(phoneNumber: String?, maskPhoneNumbers: Boolean): String {
+        val raw = PrivacyModeManager.normalizePhone(phoneNumber)
         if (raw.isBlank()) {
             return ""
         }
-        return raw.removeSuffix("(云端)").trim()
+        return if (maskPhoneNumbers) PrivacyModeManager.maskPhone(raw) else raw
     }
 
     private fun buildFallbackDeviceLabel(deviceId: String): String {

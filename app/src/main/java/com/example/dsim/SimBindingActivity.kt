@@ -170,7 +170,7 @@ class SimBindingActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
-            titleColumn.addView(createTitle(config.phoneNumber.ifBlank { "未备注号码" }))
+            titleColumn.addView(createTitle(PrivacyModeManager.displayPhone(this@SimBindingActivity, config.phoneNumber).ifBlank { "未备注号码" }))
             titleColumn.addView(createMutedText(buildConfigDetail(config)))
             row.addView(titleColumn)
 
@@ -207,14 +207,14 @@ class SimBindingActivity : AppCompatActivity() {
     private fun confirmUnbind(config: SimCardConfig) {
         AlertDialog.Builder(this)
             .setTitle("解绑 SIM？")
-            .setMessage("要解绑 ${config.phoneNumber.ifBlank { "这张卡" }} 吗？解绑后历史短信标签会保留。")
+            .setMessage("要解绑 ${PrivacyModeManager.displayPhone(this, config.phoneNumber).ifBlank { "这张卡" }} 吗？解绑后历史短信标签会保留。")
             .setPositiveButton("解绑") { _, _ ->
                 lifecycleScope.launch(Dispatchers.IO) {
                     val dao = DsimDatabase.getDatabase(this@SimBindingActivity).dsimDao()
                     dao.unbindSimConfig(config.mappingKey)
                     refreshLocalDeviceSnapshot()
                     withContext(Dispatchers.Main) {
-                        loadSimConfigs("已解绑 ${config.phoneNumber.ifBlank { config.mappingKey }}")
+                        loadSimConfigs("已解绑 ${PrivacyModeManager.displayPhone(this@SimBindingActivity, config.phoneNumber).ifBlank { config.mappingKey }}")
                     }
                 }
             }
