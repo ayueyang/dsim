@@ -564,7 +564,7 @@ class SmsChatActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val sms = list[position]
-            holder.tvChatBody.text = sms.body
+            holder.tvChatBody.text = PrivacyModeManager.displayMessageText(holder.itemView.context, sms.body)
             holder.tvChatTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(sms.timestamp))
 

@@ -83,12 +83,17 @@ object OtpConversationUtils {
             return null
         }
 
-        val senderLabel = override?.senderLabel?.trim().takeUnless { it.isNullOrBlank() }
+        val senderLabelRaw = override?.senderLabel?.trim().takeUnless { it.isNullOrBlank() }
             ?: extractBracketSender(body)
             ?: sms.address.ifBlank { "未知来源" }
 
-        val sourceLabel = sms.address.ifBlank { "未知通道" }
-        val previewBody = body.replace('\n', ' ').replace(Regex("\\s+"), " ").trim()
+        val senderLabel = PrivacyModeManager.displayMessageText(context, senderLabelRaw)
+        val sourceLabel = PrivacyModeManager.displayPhone(context, sms.address)
+            .ifBlank { sms.address.ifBlank { "未知通道" } }
+        val previewBody = PrivacyModeManager.displayMessageText(
+            context,
+            body.replace('\n', ' ').replace(Regex("\\s+"), " ").trim()
+        )
 
         return OtpMessageItem(
             sms = sms,

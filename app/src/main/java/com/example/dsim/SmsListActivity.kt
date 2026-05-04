@@ -568,9 +568,11 @@ class SmsListActivity : AppCompatActivity() {
             item: ConversationListItem.NormalConversation
         ) {
             val sms = item.sms
+            val context = holder.itemView.context
             val profile = ConversationProfileStore.load(holder.itemView.context, sms.address)
             holder.tvSender.text = buildConversationTitle(sms.address, profile)
-            holder.tvSnippet.text = sms.body.replace('\n', ' ').trim()
+            val snippet = sms.body.replace('\n', ' ').trim()
+            holder.tvSnippet.text = PrivacyModeManager.displayMessageText(context, snippet)
             holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(sms.timestamp))
             bindConversationAvatar(holder, sms.address, profile)

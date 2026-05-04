@@ -345,7 +345,7 @@ class MqttSyncService : Service() {
                     connectionStateFlow.value = true
                     startSnapshotHeartbeat()
                     if (reconnect) {
-                        updateNotification("云端状态：已恢复连接 $currentTopic")
+                        updateNotification("云端状态：已恢复连接，守护进程常驻中")
                         try {
                             globalMqttClient?.subscribe(currentTopic, 1)
                             serviceScope.launch {
@@ -377,7 +377,7 @@ class MqttSyncService : Service() {
 
             publishPing()
             publishDeviceSnapshot()
-            updateNotification("云端状态：已连接 $currentTopic")
+            updateNotification("云端状态：已连接，守护进程常驻中")
         } catch (e: Exception) {
             connectionStateFlow.value = false
             updateNotification("云端状态：连接失败，请检查网络或 Broker")
@@ -975,7 +975,8 @@ class MqttSyncService : Service() {
     }
 
     private fun createNotification(content: String): Notification {
-        val displayContent = PrivacyModeManager.displayCloudNotificationStatus(this, content)
+        val collapsedContent = PrivacyModeManager.displayCloudNotificationCollapsedStatus(this, content)
+        val expandedContent = PrivacyModeManager.displayCloudNotificationExpandedStatus(this, content)
         val intent = Intent(this, SmsListActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -986,8 +987,8 @@ class MqttSyncService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("dSIM 云端连接")
-            .setContentText(displayContent)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(displayContent))
+            .setContentText(collapsedContent)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedContent))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

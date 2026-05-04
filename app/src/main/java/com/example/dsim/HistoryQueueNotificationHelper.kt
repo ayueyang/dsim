@@ -379,8 +379,8 @@ object HistoryQueueNotificationHelper {
                     } else {
                         "目标设备：共 $targetCount 台"
                     })
-                    if (!PrivacyModeManager.isEnabled(context)) {
-                        monitor.targetNames.takeIf { it.isNotBlank() }?.let { add("设备列表：$it") }
+                    monitor.targetNames.takeIf { it.isNotBlank() }?.let {
+                        add("设备列表：${PrivacyModeManager.displayMessageText(context, it)}")
                     }
                 },
                 ongoing = true,
@@ -434,7 +434,7 @@ object HistoryQueueNotificationHelper {
             })
 
             if (progressProfile != null) {
-                val progressDeviceName = displayHistoryProfileName(context, progressProfile, totalTargets)
+                val progressDeviceName = displayHistoryProfileName(context, progressProfile)
                 val queueSuffix = progressProfile.historyQueuePosition?.let {
                     "（第 $it / $totalTargets 台）"
                 }.orEmpty()
@@ -449,7 +449,7 @@ object HistoryQueueNotificationHelper {
                 }
             } else if (nextQueued != null) {
                 val position = nextQueued.historyQueuePosition ?: 1
-                val queuedDeviceName = displayHistoryProfileName(context, nextQueued, totalTargets)
+                val queuedDeviceName = displayHistoryProfileName(context, nextQueued)
                 add(
                     if (position > 1) {
                         "当前排队：$queuedDeviceName（第 $position / $totalTargets 台）"
@@ -465,7 +465,7 @@ object HistoryQueueNotificationHelper {
 
             if (profiles.size <= 3) {
                 profiles.forEachIndexed { index, profile ->
-                    val deviceName = displayHistoryProfileName(context, profile, totalTargets, index)
+                    val deviceName = displayHistoryProfileName(context, profile, index)
                     add("$deviceName：${buildRequesterDeviceStatus(profile, now)}")
                 }
             }
@@ -610,18 +610,13 @@ object HistoryQueueNotificationHelper {
     private fun displayHistoryProfileName(
         context: Context,
         profile: DeviceProfile,
-        totalTargets: Int,
         index: Int? = null
     ): String {
-        if (!PrivacyModeManager.isEnabled(context)) {
-            return profile.deviceName.ifBlank { "远端设备" }
-        }
-        val position = profile.historyQueuePosition ?: index?.plus(1)
-        return if (totalTargets > 1 && position != null) {
-            "第 $position 台设备"
-        } else {
-            "远端设备"
-        }
+        return PrivacyModeManager.displayNotificationDeviceName(
+            context,
+            profile.deviceName,
+            fallback = index?.plus(1)?.let { "第 $it 台设备" } ?: "远端设备"
+        )
     }
 
     private fun isRequestedBySelf(

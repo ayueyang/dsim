@@ -280,7 +280,7 @@ class SettingsActivity : AppCompatActivity() {
             refreshPrivacySensitiveNotifications()
             Toast.makeText(
                 this,
-                if (isChecked) "隐私模式已开启，号码和通知内容将隐藏" else "隐私模式已关闭，号码和通知内容将完整显示",
+                if (isChecked) "隐私模式已开启，手机号将打码显示" else "隐私模式已关闭，手机号将完整显示",
                 Toast.LENGTH_SHORT
             ).show()
         }

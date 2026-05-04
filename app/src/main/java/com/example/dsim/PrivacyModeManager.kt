@@ -42,10 +42,15 @@ object PrivacyModeManager {
 
     fun displaySmsNotificationBody(context: Context, body: String?): String {
         val text = body?.trim().orEmpty()
+        return displayMessageText(context, text)
+    }
+
+    fun displayMessageText(context: Context, text: String?): String {
+        val raw = text.orEmpty()
         if (!isEnabled(context)) {
-            return text
+            return raw
         }
-        return if (text.isBlank()) "收到一条短信" else "隐私模式已隐藏短信内容"
+        return maskPhoneLikeText(raw)
     }
 
     fun displayCloudNotificationStatus(context: Context, content: String): String {
@@ -53,11 +58,23 @@ object PrivacyModeManager {
         if (!isEnabled(context)) {
             return text
         }
-        return when {
-            text.startsWith("云端状态：已恢复连接") -> "云端状态：已恢复连接"
-            text.startsWith("云端状态：已连接 ") -> "云端状态：已连接"
-            else -> maskPhoneLikeText(text)
+        return maskPhoneLikeText(text)
+    }
+
+    fun displayCloudNotificationExpandedStatus(context: Context, content: String): String {
+        val status = displayCloudNotificationStatus(context, content)
+        if (!isEnabled(context)) {
+            return status
         }
+        return "$status\n隐私模式：已开启"
+    }
+
+    fun displayCloudNotificationCollapsedStatus(context: Context, content: String): String {
+        val status = displayCloudNotificationStatus(context, content)
+        if (!isEnabled(context)) {
+            return status
+        }
+        return "$status · 隐私模式已开启"
     }
 
     fun displayNotificationDeviceName(
@@ -69,7 +86,7 @@ object PrivacyModeManager {
         if (!isEnabled(context)) {
             return text.ifBlank { fallback }
         }
-        return fallback
+        return maskPhoneLikeText(text.ifBlank { fallback })
     }
 
     fun normalizePhone(phoneNumber: String?): String {
@@ -101,16 +118,19 @@ object PrivacyModeManager {
     }
 
     private fun maskPhoneLikeText(text: String): String {
-        return PHONE_LIKE_REGEX.replace(text) { match ->
-            val value = match.value
-            val digitCount = value.count { it.isDigit() }
-            if (digitCount > 7) {
-                maskPhone(value)
-            } else {
-                value
-            }
+        var result = INTERNATIONAL_PHONE_REGEX.replace(text) { match ->
+            maskPhone(match.value)
         }
+        result = CHINA_MOBILE_PHONE_REGEX.replace(result) { match ->
+            maskPhone(match.value)
+        }
+        result = LONG_CONTIGUOUS_PHONE_REGEX.replace(result) { match ->
+            maskPhone(match.value)
+        }
+        return result
     }
 
-    private val PHONE_LIKE_REGEX = Regex("""\+?\d[\d\s-]{7,}\d""")
+    private val INTERNATIONAL_PHONE_REGEX = Regex("""(?<![\w+])\+\d(?:[\d\s-]{6,}\d)""")
+    private val CHINA_MOBILE_PHONE_REGEX = Regex("""(?<![\d+])(?:\+?86[-\s]?)?1[3-9]\d(?:[-\s]?\d){8}(?!\d)""")
+    private val LONG_CONTIGUOUS_PHONE_REGEX = Regex("""(?<!\d)(?:86)?1[3-9]\d{9}(?!\d)""")
 }
