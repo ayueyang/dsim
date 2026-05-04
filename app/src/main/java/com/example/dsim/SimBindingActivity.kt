@@ -1,7 +1,6 @@
 package com.example.dsim
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -10,7 +9,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.MenuItem
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -33,7 +31,7 @@ class SimBindingActivity : AppCompatActivity() {
 
     private lateinit var container: LinearLayout
     private lateinit var tvStatus: TextView
-    private lateinit var btnProbeAndBind: Button
+    private lateinit var btnProbeAndBind: TextView
     private var pendingPermissionAction: (() -> Unit)? = null
 
     private val requiredPermissions = mutableListOf(
@@ -71,6 +69,7 @@ class SimBindingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         title = "SIM 绑定管理"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        configureSystemBars()
         buildContentView()
         btnProbeAndBind.setOnClickListener {
             checkPermissionAndAction { probeAndBindLocalSims() }
@@ -89,13 +88,22 @@ class SimBindingActivity : AppCompatActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun configureSystemBars() {
+        window.statusBarColor = Color.parseColor("#123B48")
+        window.navigationBarColor = Color.WHITE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
+    }
+
     private fun buildContentView() {
         val scrollView = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#F3F5F8"))
+            setBackgroundColor(Color.parseColor("#F4F7FA"))
         }
         container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(32))
+            setPadding(dp(14), dp(14), dp(14), dp(32))
         }
         scrollView.addView(container)
 
@@ -106,17 +114,36 @@ class SimBindingActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#475569"))
             setTextSize(14f)
             setLineSpacing(0f, 1.18f)
-        }
-        btnProbeAndBind = Button(this).apply {
-            text = "探测并绑定本机 SIM"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#2457F5"))
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = SenderColorUtils.roundedDrawable(
+                this@SimBindingActivity,
+                color = Color.WHITE,
+                radiusDp = 22f,
+                strokeColor = Color.parseColor("#E6ECF3"),
+                strokeWidthDp = 1f
+            )
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(16)
+                bottomMargin = dp(12)
+            }
+        }
+        btnProbeAndBind = TextView(this).apply {
+            text = "探测并绑定本机 SIM"
+            gravity = Gravity.CENTER
+            setTypeface(typeface, Typeface.BOLD)
+            setTextSize(16f)
+            setTextColor(Color.WHITE)
+            background = SenderColorUtils.roundedDrawable(
+                this@SimBindingActivity,
+                color = Color.parseColor("#123B48"),
+                radiusDp = 18f
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(56)
+            ).apply {
                 bottomMargin = dp(16)
             }
         }
@@ -155,7 +182,20 @@ class SimBindingActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(18))
+            setPadding(dp(16), dp(18), dp(16), dp(18))
+            background = SenderColorUtils.roundedDrawable(
+                this@SimBindingActivity,
+                color = Color.WHITE,
+                radiusDp = 28f,
+                strokeColor = Color.parseColor("#E7ECF2"),
+                strokeWidthDp = 1f
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(12)
+            }
 
             addView(ImageButton(this@SimBindingActivity).apply {
                 setImageResource(R.drawable.ic_nav_back)
@@ -174,12 +214,12 @@ class SimBindingActivity : AppCompatActivity() {
                     text = "SIM 绑定管理"
                     setTextColor(Color.parseColor("#111827"))
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextSize(24f)
+                    setTextSize(28f)
                 })
                 addView(TextView(this@SimBindingActivity).apply {
                     text = "管理本机物理卡和卡槽绑定。"
                     setTextColor(Color.parseColor("#64748B"))
-                    setTextSize(14f)
+                    setTextSize(15f)
                     setPadding(0, dp(6), 0, 0)
                 })
             }, LinearLayout.LayoutParams(
@@ -210,19 +250,36 @@ class SimBindingActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+            val palette = SenderColorUtils.paletteForSim(this@SimBindingActivity, config)
+            row.addView(createSimBadge(config, palette))
             val titleColumn = LinearLayout(this@SimBindingActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(14)
+                    marginEnd = dp(10)
+                }
             }
             titleColumn.addView(createTitle(PrivacyModeManager.displayOwnPhone(this@SimBindingActivity, config.phoneNumber).ifBlank { "未备注号码" }))
             titleColumn.addView(createMutedText(buildConfigDetail(config)))
             row.addView(titleColumn)
 
-            val action = Button(this@SimBindingActivity).apply {
+            val action = TextView(this@SimBindingActivity).apply {
                 text = if (config.isActive) "解绑" else "恢复"
-                isAllCaps = false
-                setTextColor(if (config.isActive) Color.parseColor("#8A1F2D") else Color.parseColor("#1F8A4D"))
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+                gravity = Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD)
+                setTextSize(14f)
+                val actionColor = if (config.isActive) Color.parseColor("#A5434D") else Color.parseColor("#247A7C")
+                val actionBg = if (config.isActive) Color.parseColor("#FFF1F2") else Color.parseColor("#EAF7F7")
+                setTextColor(actionColor)
+                setPadding(dp(16), dp(10), dp(16), dp(10))
+                minWidth = dp(72)
+                background = SenderColorUtils.roundedDrawable(
+                    this@SimBindingActivity,
+                    color = actionBg,
+                    radiusDp = 16f,
+                    strokeColor = actionColor,
+                    strokeWidthDp = 1f
+                )
                 setOnClickListener {
                     if (config.isActive) {
                         confirmUnbind(config)
@@ -246,6 +303,25 @@ class SimBindingActivity : AppCompatActivity() {
         val subId = config.subscriptionId?.let { " · subId $it" }.orEmpty()
         val state = if (config.isActive) "活跃" else "已解绑"
         return "$state · $slot$subId · $mode\n${config.mappingKey}"
+    }
+
+    private fun createSimBadge(config: SimCardConfig, palette: SenderColorPalette): TextView {
+        val label = config.slotIndex?.let { "卡${it + 1}" } ?: "SIM"
+        return TextView(this).apply {
+            text = label
+            gravity = Gravity.CENTER
+            setTypeface(typeface, Typeface.BOLD)
+            setTextSize(14f)
+            setTextColor(if (config.isActive) palette.source else Color.parseColor("#8A94A3"))
+            background = SenderColorUtils.roundedDrawable(
+                this@SimBindingActivity,
+                color = if (config.isActive) palette.soft else Color.parseColor("#F2F5F8"),
+                radiusDp = 20f,
+                strokeColor = if (config.isActive) palette.border else Color.parseColor("#E1E7EF"),
+                strokeWidthDp = 1f
+            )
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+        }
     }
 
     private fun confirmUnbind(config: SimCardConfig) {
@@ -310,6 +386,7 @@ class SimBindingActivity : AppCompatActivity() {
 
     private fun probeAndBindLocalSims() {
         btnProbeAndBind.isEnabled = false
+        btnProbeAndBind.alpha = 0.55f
         tvStatus.text = "正在探测本机 SIM..."
         lifecycleScope.launch {
             try {
@@ -320,6 +397,7 @@ class SimBindingActivity : AppCompatActivity() {
                 checkAndBindSimCards()
             } finally {
                 btnProbeAndBind.isEnabled = true
+                btnProbeAndBind.alpha = 1f
             }
         }
     }
@@ -479,12 +557,14 @@ class SimBindingActivity : AppCompatActivity() {
     private fun createCard(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(Color.WHITE)
-                setStroke(dp(1), Color.parseColor("#E2E8F0"))
-            }
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = SenderColorUtils.roundedDrawable(
+                this@SimBindingActivity,
+                color = Color.WHITE,
+                radiusDp = 22f,
+                strokeColor = Color.parseColor("#E6ECF3"),
+                strokeWidthDp = 1f
+            )
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -497,18 +577,18 @@ class SimBindingActivity : AppCompatActivity() {
     private fun createTitle(textValue: String): TextView {
         return TextView(this).apply {
             text = textValue
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#122033"))
             setTypeface(typeface, Typeface.BOLD)
-            setTextSize(16f)
+            setTextSize(18f)
         }
     }
 
     private fun createMutedText(textValue: String): TextView {
         return TextView(this).apply {
             text = textValue
-            setTextColor(Color.parseColor("#64748B"))
+            setTextColor(Color.parseColor("#66758A"))
             setTextSize(13f)
-            setLineSpacing(0f, 1.18f)
+            setLineSpacing(0f, 1.24f)
             setPadding(0, dp(8), 0, 0)
         }
     }
