@@ -64,7 +64,7 @@ class SmsListActivity : AppCompatActivity() {
 
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerViewSms)
         val fabNewConversation = findViewById<FloatingActionButton>(R.id.fabNewConversation)
-        val btnOpenSettings = findViewById<android.widget.Button>(R.id.btnOpenSettings)
+        val btnOpenSettings = findViewById<TextView>(R.id.btnOpenSettings)
         val btnSetupGuideSettings = findViewById<Button>(R.id.btnSetupGuideSettings)
         setupGuideContainer = findViewById(R.id.setupGuideContainer)
         tvSetupGuideStatus = findViewById(R.id.tvSetupGuideStatus)
@@ -325,7 +325,7 @@ class SmsListActivity : AppCompatActivity() {
                 .format(Date(item.latestOtp.sms.timestamp))
             holder.cardAvatar.setCardBackgroundColor(Color.parseColor("#FFF3D8"))
             holder.tvAvatar.setTextColor(Color.parseColor("#B7791F"))
-            holder.cardConversation.setCardBackgroundColor(Color.parseColor("#FFFCF6"))
+            holder.cardConversation.setCardBackgroundColor(Color.WHITE)
             holder.cardConversation.strokeColor = Color.parseColor("#F1E4C9")
 
             holder.itemView.setOnClickListener {
