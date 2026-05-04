@@ -69,7 +69,7 @@ class SmsChatActivity : AppCompatActivity() {
         etSmsInput = findViewById(R.id.etSmsInput)
         btnSendSms = findViewById(R.id.btnSendSms)
 
-        tvChatTitle.text = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        tvChatTitle.text = buildChatTitle()
 
         layoutManager = LinearLayoutManager(this).apply {
             stackFromEnd = true
@@ -92,7 +92,7 @@ class SmsChatActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        tvChatTitle.text = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        tvChatTitle.text = buildChatTitle()
         adapter.notifyDataSetChanged()
         val selectedConfig = activeSimConfigs.firstOrNull { it.mappingKey == selectedMappingKey }
         if (selectedConfig != null) {
@@ -134,6 +134,13 @@ class SmsChatActivity : AppCompatActivity() {
         if (messages.isNotEmpty()) {
             rvChatMessages.scrollToPosition(messages.size - 1)
         }
+    }
+
+    private fun buildChatTitle(): String {
+        val profile = ConversationProfileStore.load(this, address)
+        val number = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        val remark = profile.remark.trim()
+        return if (remark.isBlank()) number else "$remark $number"
     }
 
     private fun loadSimConfigs() {

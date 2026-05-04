@@ -233,6 +233,75 @@ class SmsListActivity : AppCompatActivity() {
         startActivity(Intent(this, OtpConversationActivity::class.java))
     }
 
+    private fun showConversationProfileDialog(address: String): Boolean {
+        val profile = ConversationProfileStore.load(this, address)
+        val displayNumber = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+
+        val tipView = TextView(this).apply {
+            text = "备注会显示在号码前面，号码仍然保留。头像不填时自动生成。"
+            textSize = 13f
+            setTextColor(Color.parseColor("#64707F"))
+        }
+        val remarkInput = EditText(this).apply {
+            hint = "备注，例如：建设银行"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(profile.remark)
+            setSelection(text.length)
+        }
+        val avatarInput = EditText(this).apply {
+            hint = "头像文字，1-2 个字，可不填"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(profile.avatarText)
+            setSelection(text.length)
+        }
+        val numberView = TextView(this).apply {
+            text = "当前号码：$displayNumber"
+            textSize = 13f
+            setTextColor(Color.parseColor("#8A94A3"))
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 8)
+            addView(tipView)
+            addView(remarkInput)
+            addView(avatarInput)
+            addView(numberView)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("会话备注")
+            .setView(container)
+            .setPositiveButton("保存", null)
+            .setNegativeButton("取消", null)
+            .setNeutralButton("清除", null)
+            .show()
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val remark = remarkInput.text.toString().trim()
+            val avatarText = avatarInput.text.toString().trim()
+            if (remark.isBlank() && avatarText.isBlank()) {
+                ConversationProfileStore.clear(this, address)
+            } else {
+                ConversationProfileStore.save(this, address, remark, avatarText)
+            }
+            refreshConversationItems()
+            Toast.makeText(this, "会话备注已保存", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            ConversationProfileStore.clear(this, address)
+            refreshConversationItems()
+            Toast.makeText(this, "已清除会话备注", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        return true
+    }
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_sms_list, menu)
         return true
@@ -299,18 +368,21 @@ class SmsListActivity : AppCompatActivity() {
             item: ConversationListItem.NormalConversation
         ) {
             val sms = item.sms
-            holder.tvSender.text = PrivacyModeManager.displayPhone(holder.itemView.context, sms.address)
-                .ifBlank { sms.address }
+            val profile = ConversationProfileStore.load(holder.itemView.context, sms.address)
+            holder.tvSender.text = buildConversationTitle(sms.address, profile)
             holder.tvSnippet.text = sms.body.replace('\n', ' ').trim()
-            holder.tvAvatar.text = buildAvatarLabel(sms.address)
+            holder.tvAvatar.text = buildAvatarLabel(sms.address, profile)
             holder.tvTime.text = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                 .format(Date(sms.timestamp))
-            applyAvatarStyle(holder, sms.address)
+            applyAvatarStyle(holder, profile.remark.ifBlank { sms.address })
             holder.cardConversation.setCardBackgroundColor(Color.WHITE)
             holder.cardConversation.strokeColor = Color.parseColor("#E7ECF2")
 
             holder.itemView.setOnClickListener {
                 openChat(sms.address)
+            }
+            holder.itemView.setOnLongClickListener {
+                showConversationProfileDialog(sms.address)
             }
         }
 
@@ -331,9 +403,28 @@ class SmsListActivity : AppCompatActivity() {
             holder.itemView.setOnClickListener {
                 openOtpConversation()
             }
+            holder.itemView.setOnLongClickListener(null)
         }
 
-        private fun buildAvatarLabel(address: String): String {
+        private fun buildConversationTitle(
+            address: String,
+            profile: ConversationProfile
+        ): String {
+            val number = PrivacyModeManager.displayPhone(this@SmsListActivity, address)
+                .ifBlank { address }
+            val remark = profile.remark.trim()
+            return if (remark.isBlank()) number else "$remark $number"
+        }
+
+        private fun buildAvatarLabel(address: String, profile: ConversationProfile): String {
+            val customAvatar = profile.avatarText.trim().take(2)
+            if (customAvatar.isNotBlank()) {
+                return customAvatar
+            }
+            val remark = profile.remark.trim()
+            if (remark.isNotBlank()) {
+                return remark.take(1).uppercase()
+            }
             val normalized = PrivacyModeManager.normalizePhone(address)
             val digits = normalized.filter { it.isDigit() }
             return when {
