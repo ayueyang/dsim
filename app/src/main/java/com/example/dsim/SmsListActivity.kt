@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -61,6 +62,13 @@ class SmsListActivity : AppCompatActivity() {
         val resId: Int
     )
 
+    private data class ContactPhoneOption(
+        val contactId: Long,
+        val displayName: String,
+        val phoneNumber: String,
+        val searchText: String
+    )
+
     private data class ProfileEditorState(
         val address: String,
         val dialog: BottomSheetDialog,
@@ -79,6 +87,16 @@ class SmsListActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) {
         startCloudDaemon()
+    }
+
+    private val contactsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showContactPickerDialog()
+        } else {
+            Toast.makeText(this, "未获得联系人权限，无法从联系人新建会话", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private val avatarImagePicker = registerForActivityResult(
@@ -240,9 +258,14 @@ class SmsListActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_create_conversation, null)
         val input = content.findViewById<EditText>(R.id.etCreateConversationPhone)
+        val contactButton = content.findViewById<TextView>(R.id.tvPickContactForConversation)
         val cancelButton = content.findViewById<TextView>(R.id.tvCancelCreateConversation)
         val openButton = content.findViewById<TextView>(R.id.tvOpenCreateConversation)
 
+        contactButton.setOnClickListener {
+            dialog.dismiss()
+            openContactPickerWithPermission()
+        }
         cancelButton.setOnClickListener { dialog.dismiss() }
         openButton.setOnClickListener {
             val rawAddress = input.text.toString().trim()
@@ -264,6 +287,168 @@ class SmsListActivity : AppCompatActivity() {
             bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
         }
         dialog.show()
+    }
+
+    private fun openContactPickerWithPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            showContactPickerDialog()
+            return
+        }
+
+        contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+    }
+
+    private fun showContactPickerDialog() {
+        val dialog = BottomSheetDialog(this)
+        val content = layoutInflater.inflate(R.layout.dialog_contact_picker, null)
+        val searchInput = content.findViewById<EditText>(R.id.etContactSearch)
+        val emptyView = content.findViewById<TextView>(R.id.tvContactPickerEmpty)
+        val recyclerView = content.findViewById<RecyclerView>(R.id.rvContactOptions)
+        val adapter = ContactPhoneAdapter(emptyList()) { option ->
+            handleContactSelected(option, dialog)
+        }
+        var allContactOptions: List<ContactPhoneOption> = emptyList()
+
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = adapter
+
+        fun render(query: String = searchInput.text.toString()) {
+            val filtered = filterContactOptions(allContactOptions, query)
+            adapter.updateData(filtered)
+            recyclerView.visibility = if (filtered.isEmpty()) View.GONE else View.VISIBLE
+            emptyView.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+            emptyView.text = when {
+                allContactOptions.isEmpty() -> "没有可用联系人号码"
+                query.isNotBlank() -> "没有匹配的联系人"
+                else -> "没有可用联系人号码"
+            }
+        }
+
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                render(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+
+        dialog.setContentView(content)
+        dialog.setOnShowListener {
+            val bottomSheet = dialog.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            )
+            bottomSheet?.setBackgroundColor(Color.TRANSPARENT)
+        }
+        dialog.show()
+
+        lifecycleScope.launch {
+            allContactOptions = withContext(Dispatchers.IO) {
+                loadContactPhoneOptions()
+            }
+            if (dialog.isShowing) {
+                render()
+            }
+        }
+    }
+
+    private fun filterContactOptions(
+        options: List<ContactPhoneOption>,
+        query: String
+    ): List<ContactPhoneOption> {
+        val cleanQuery = query.trim().lowercase(Locale.ROOT)
+        if (cleanQuery.isBlank()) {
+            return options
+        }
+        val queryDigits = cleanQuery.filter { it.isDigit() }
+        return options.filter { option ->
+            option.searchText.contains(cleanQuery) ||
+                (queryDigits.isNotBlank() && option.phoneNumber.filter { it.isDigit() }.contains(queryDigits))
+        }
+    }
+
+    private fun loadContactPhoneOptions(): List<ContactPhoneOption> {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return emptyList()
+        }
+
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
+            ContactsContract.CommonDataKinds.Phone.NUMBER
+        )
+        val dedupeKeys = linkedSetOf<String>()
+        val results = mutableListOf<ContactPhoneOption>()
+
+        contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} COLLATE LOCALIZED ASC"
+        )?.use { cursor ->
+            val contactIdIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY)
+            val numberIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (cursor.moveToNext()) {
+                val rawNumber = cursor.getString(numberIndex).orEmpty().trim()
+                if (rawNumber.isBlank()) {
+                    continue
+                }
+                val name = cursor.getString(nameIndex).orEmpty().trim().ifBlank { rawNumber }
+                val digits = rawNumber.filter { it.isDigit() }
+                val dedupeKey = "${name.lowercase(Locale.ROOT)}|$digits"
+                if (!dedupeKeys.add(dedupeKey)) {
+                    continue
+                }
+                results += ContactPhoneOption(
+                    contactId = cursor.getLong(contactIdIndex),
+                    displayName = name,
+                    phoneNumber = rawNumber,
+                    searchText = "$name $rawNumber $digits".lowercase(Locale.ROOT)
+                )
+            }
+        }
+
+        return results.sortedWith(
+            compareBy<ContactPhoneOption> { it.displayName.lowercase(Locale.ROOT) }
+                .thenBy { it.phoneNumber.filter { char -> char.isDigit() } }
+        )
+    }
+
+    private fun handleContactSelected(
+        option: ContactPhoneOption,
+        dialog: BottomSheetDialog
+    ) {
+        val normalizedAddress = GlobalNumberUtils.formatToE164(this, option.phoneNumber)
+        val address = normalizedAddress.ifBlank { option.phoneNumber.trim() }
+        saveContactRemarkIfEmpty(address, option.displayName)
+        dialog.dismiss()
+        openChat(address)
+    }
+
+    private fun saveContactRemarkIfEmpty(address: String, contactName: String) {
+        val cleanName = contactName.trim()
+        if (cleanName.isBlank()) {
+            return
+        }
+        val profile = ConversationProfileStore.load(this, address)
+        if (profile.remark.isNotBlank()) {
+            return
+        }
+        ConversationProfileStore.save(
+            context = this,
+            address = address,
+            remark = cleanName,
+            avatarText = profile.avatarText,
+            avatarMode = profile.avatarMode,
+            avatarPreset = profile.avatarPreset,
+            avatarImageUri = profile.avatarImageUri
+        )
+        refreshConversationItems()
     }
 
     private fun openChat(address: String, targetUuid: String? = null) {
@@ -653,6 +838,51 @@ class SmsListActivity : AppCompatActivity() {
         }
 
         override fun getItemCount() = list.size
+    }
+
+    private inner class ContactPhoneAdapter(
+        private var options: List<ContactPhoneOption>,
+        private val onSelect: (ContactPhoneOption) -> Unit
+    ) : RecyclerView.Adapter<ContactPhoneAdapter.ViewHolder>() {
+
+        fun updateData(newOptions: List<ContactPhoneOption>) {
+            options = newOptions
+            notifyDataSetChanged()
+        }
+
+        inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val card: MaterialCardView = view.findViewById(R.id.cardContactOption)
+            val avatarCard: MaterialCardView = view.findViewById(R.id.cardContactAvatar)
+            val avatar: TextView = view.findViewById(R.id.tvContactAvatar)
+            val name: TextView = view.findViewById(R.id.tvContactName)
+            val phone: TextView = view.findViewById(R.id.tvContactPhone)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_contact_phone, parent, false)
+            return ViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            val option = options[position]
+            val context = holder.itemView.context
+            val displayPhone = PrivacyModeManager.displayPhone(context, option.phoneNumber)
+                .ifBlank { option.phoneNumber }
+            val avatarText = option.displayName.trim().take(1).uppercase(Locale.ROOT)
+                .ifBlank { displayPhone.filter { it.isDigit() }.takeLast(2).ifBlank { "?" } }
+            val (background, foreground) = resolveAvatarPalette(option.displayName)
+
+            holder.avatar.text = avatarText
+            holder.name.text = option.displayName
+            holder.phone.text = displayPhone
+            holder.avatarCard.setCardBackgroundColor(Color.parseColor(background))
+            holder.avatar.setTextColor(Color.parseColor(foreground))
+            holder.itemView.setOnClickListener { onSelect(option) }
+            holder.card.setOnClickListener { onSelect(option) }
+        }
+
+        override fun getItemCount(): Int = options.size
     }
 
     private inner class AvatarPresetAdapter(
