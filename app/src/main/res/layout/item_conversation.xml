@@ -36,15 +36,28 @@
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
-                <TextView
-                    android:id="@+id/tvAvatar"
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:gravity="center"
-                    android:includeFontPadding="false"
-                    android:textColor="#1976D2"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
+                    android:layout_height="match_parent">
+
+                    <ImageView
+                        android:id="@+id/ivAvatar"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="会话头像"
+                        android:scaleType="centerCrop"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvAvatar"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:includeFontPadding="false"
+                        android:textColor="#1976D2"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                </FrameLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <LinearLayout
