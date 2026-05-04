@@ -335,7 +335,7 @@ object HistoryQueueNotificationHelper {
             return null
         }
         return state.currentAddress.takeIf { it.isNotBlank() }?.let {
-            "当前号码：${PrivacyModeManager.displayPhone(context, it)}"
+            "当前号码：${PrivacyModeManager.displayOwnPhone(context, it)}"
         }
     }
 

@@ -55,7 +55,8 @@ open class SmsReceiver : BroadcastReceiver() {
                     subscriptionId = subId,
                     slotIndex = slotIndex
                 )
-                val remarkName = source.matchedConfig?.phoneNumber?.takeIf { it.isNotBlank() } ?: cleanAddress
+                val receivingPhone = source.matchedConfig?.phoneNumber?.takeIf { it.isNotBlank() }.orEmpty()
+                PrivacyModeManager.rememberOwnPhone(context, receivingPhone)
 
                 val newSms = SmsMessage(
                     uuid = java.util.UUID.randomUUID().toString(),
@@ -78,7 +79,7 @@ open class SmsReceiver : BroadcastReceiver() {
                     timestamp = timestamp,
                     subscriptionId = newSms.simId.takeIf { it >= 0 }
                 )
-                NotificationUtils.showNewMessageNotification(context, newSms, remarkName)
+                NotificationUtils.showNewMessageNotification(context, newSms, receivingPhone)
                 publishIncomingSmsToCloud(context, newSms, source.sourcePhoneNumber)
 
                 Log.d(

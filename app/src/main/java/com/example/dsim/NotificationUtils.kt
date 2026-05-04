@@ -49,7 +49,7 @@ object NotificationUtils {
         ensureChannelsExist(context)
     }
 
-    fun showNewMessageNotification(context: Context, sms: SmsMessage, remarkName: String?) {
+    fun showNewMessageNotification(context: Context, sms: SmsMessage, receivingPhone: String?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
@@ -63,9 +63,19 @@ object NotificationUtils {
         val targetChannel = if (isMuted) CHANNEL_SILENT else CHANNEL_LOUD
         val targetPriority = if (isMuted) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX
 
-        val title = PrivacyModeManager.displayPhone(context, remarkName ?: sms.address)
+        PrivacyModeManager.rememberOwnPhone(context, receivingPhone)
+        val profile = ConversationProfileStore.load(context, sms.address)
+        val senderAddress = PrivacyModeManager.displayConversationAddress(context, sms.address)
             .ifBlank { sms.address }
-        val previewText = PrivacyModeManager.displaySmsNotificationBody(context, sms.body)
+        val title = profile.remark.trim().takeIf { it.isNotBlank() }
+            ?.let { "$it $senderAddress" }
+            ?: senderAddress
+        val previewBody = PrivacyModeManager.displaySmsNotificationBody(context, sms.body)
+        val receivingLine = receivingPhone
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "接收卡 ${PrivacyModeManager.displayOwnPhone(context, it)} · " }
+            .orEmpty()
+        val previewText = receivingLine + previewBody
         val intent = Intent(context, SmsChatActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("CHAT_ADDRESS", sms.address)

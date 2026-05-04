@@ -112,6 +112,7 @@ object DeviceDirectoryManager {
         val dao = DsimDatabase.getDatabase(context).dsimDao()
         val activeSims = dao.getActiveSimConfigs().filter { it.bindMode != "REMOTE_SHADOW" }
         val phoneNumbers = activeSims.map { it.phoneNumber.trim() }.filter { it.isNotBlank() }.distinct()
+        PrivacyModeManager.rememberOwnPhones(context, phoneNumbers)
 
         return Snapshot(
             deviceId = HardwareProbeUtils.getDeviceId(context),

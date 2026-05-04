@@ -88,7 +88,7 @@ object OtpConversationUtils {
             ?: sms.address.ifBlank { "未知来源" }
 
         val senderLabel = PrivacyModeManager.displayMessageText(context, senderLabelRaw)
-        val sourceLabel = PrivacyModeManager.displayPhone(context, sms.address)
+        val sourceLabel = PrivacyModeManager.displayConversationAddress(context, sms.address)
             .ifBlank { sms.address.ifBlank { "未知通道" } }
         val previewBody = PrivacyModeManager.displayMessageText(
             context,

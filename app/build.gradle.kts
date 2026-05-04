@@ -69,7 +69,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
     
     // Google libphonenumber (全球号码标准化)
-    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.20")
+    implementation("com.googlecode.libphonenumber:libphonenumber:9.0.29")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

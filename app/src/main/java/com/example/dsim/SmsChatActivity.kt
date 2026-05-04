@@ -112,6 +112,10 @@ class SmsChatActivity : AppCompatActivity() {
                 configMap = configsForUi.associateBy { it.mappingKey }
 
                 withContext(Dispatchers.Main) {
+                    PrivacyModeManager.rememberOwnPhones(
+                        this@SmsChatActivity,
+                        configsForUi.map { it.phoneNumber }
+                    )
                     senderPaletteMap = SenderColorUtils.buildPaletteMap(
                         this@SmsChatActivity,
                         activeSimConfigs + configsForUi
@@ -147,7 +151,7 @@ class SmsChatActivity : AppCompatActivity() {
 
     private fun buildChatTitle(): String {
         val profile = ConversationProfileStore.load(this, address)
-        val number = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        val number = PrivacyModeManager.displayConversationAddress(this, address).ifBlank { address }
         val remark = profile.remark.trim()
         return if (remark.isBlank()) number else "$remark $number"
     }
@@ -177,6 +181,10 @@ class SmsChatActivity : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 activeSimConfigs = configs
+                PrivacyModeManager.rememberOwnPhones(
+                    this@SmsChatActivity,
+                    configs.map { it.phoneNumber }
+                )
                 refreshSenderPaletteMap(configs)
                 selectedMappingKey = preferredKey
                 bindSelectedSenderButton(configs.firstOrNull { it.mappingKey == preferredKey })
@@ -300,7 +308,7 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun displayPhoneNumber(phoneNumber: String): String {
-        return PrivacyModeManager.displayPhone(this, phoneNumber)
+        return PrivacyModeManager.displayOwnPhone(this, phoneNumber)
     }
 
     private fun refreshSenderPaletteMap(configs: List<SimCardConfig>) {
@@ -640,6 +648,15 @@ class SmsChatActivity : AppCompatActivity() {
                 localDeviceName = DeviceNameManager.getDisplayName(holder.itemView.context),
                 maskPhoneNumbers = PrivacyModeManager.isEnabled(holder.itemView.context)
             )
+            val peerAddress = PrivacyModeManager.displayConversationAddress(
+                holder.itemView.context,
+                sms.address
+            ).ifBlank { sms.address }
+            holder.tvChatSource.text = when (sms.type) {
+                1 -> "发件人 $peerAddress · ${holder.tvChatSource.text}"
+                2 -> "收件人 $peerAddress · ${holder.tvChatSource.text}"
+                else -> holder.tvChatSource.text
+            }
 
             val params = holder.bubbleContainer.layoutParams as LinearLayout.LayoutParams
             if (sms.type == 2) {

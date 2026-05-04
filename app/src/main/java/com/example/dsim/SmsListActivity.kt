@@ -472,7 +472,7 @@ class SmsListActivity : AppCompatActivity() {
 
     private fun showConversationProfileDialog(address: String): Boolean {
         val profile = ConversationProfileStore.load(this, address)
-        val displayNumber = PrivacyModeManager.displayPhone(this, address).ifBlank { address }
+        val displayNumber = PrivacyModeManager.displayConversationAddress(this, address).ifBlank { address }
 
         val dialog = BottomSheetDialog(this)
         val content = layoutInflater.inflate(R.layout.dialog_conversation_profile, null)
@@ -794,7 +794,7 @@ class SmsListActivity : AppCompatActivity() {
             address: String,
             profile: ConversationProfile
         ): String {
-            val number = PrivacyModeManager.displayPhone(this@SmsListActivity, address)
+            val number = PrivacyModeManager.displayConversationAddress(this@SmsListActivity, address)
                 .ifBlank { address }
             val remark = profile.remark.trim()
             return if (remark.isBlank()) number else "$remark $number"

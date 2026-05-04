@@ -483,6 +483,7 @@ class MqttSyncService : Service() {
             val existingConfig = dao.getSimConfigByKey(sms.mappingKey)
             if (existingConfig == null || existingConfig.bindMode == "REMOTE_SHADOW") {
                 val sourcePhone = payload.remarkPhone.trim()
+                PrivacyModeManager.rememberOwnPhone(this@MqttSyncService, sourcePhone)
                 dao.saveSimConfig(
                     buildRemoteShadowConfig(
                         mappingKey = sms.mappingKey,
@@ -698,6 +699,7 @@ class MqttSyncService : Service() {
             } else {
                 dao.insertMessage(sentMsg)
             }
+            PrivacyModeManager.rememberOwnPhone(this@MqttSyncService, myConfig.phoneNumber)
             publishEncryptedSms(
                 context = this@MqttSyncService,
                 sms = sentMsg,
@@ -932,6 +934,7 @@ class MqttSyncService : Service() {
             if (mappingKey.isBlank() || phoneNumber.isBlank()) {
                 continue
             }
+            PrivacyModeManager.rememberOwnPhone(this@MqttSyncService, phoneNumber)
 
             val existingConfig = dao.getSimConfigByKey(mappingKey)
             if (existingConfig != null && existingConfig.bindMode != "REMOTE_SHADOW") {
