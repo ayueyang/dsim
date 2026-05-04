@@ -65,6 +65,7 @@ object NotificationUtils {
 
         val title = PrivacyModeManager.displayPhone(context, remarkName ?: sms.address)
             .ifBlank { sms.address }
+        val previewText = PrivacyModeManager.displaySmsNotificationBody(context, sms.body)
         val intent = Intent(context, SmsChatActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("CHAT_ADDRESS", sms.address)
@@ -80,8 +81,10 @@ object NotificationUtils {
         val builder = NotificationCompat.Builder(context, targetChannel)
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentTitle(title)
-            .setContentText(sms.body)
+            .setContentText(previewText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(previewText))
             .setPriority(targetPriority)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
 

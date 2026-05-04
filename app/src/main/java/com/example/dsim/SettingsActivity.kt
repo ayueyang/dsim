@@ -277,15 +277,30 @@ class SettingsActivity : AppCompatActivity() {
         switchPrivacyModeSetting.isChecked = PrivacyModeManager.isEnabled(this)
         switchPrivacyModeSetting.setOnCheckedChangeListener { _, isChecked ->
             PrivacyModeManager.setEnabled(this, isChecked)
+            refreshPrivacySensitiveNotifications()
             Toast.makeText(
                 this,
-                if (isChecked) "隐私模式已开启，号码将隐藏中间四位" else "隐私模式已关闭，号码将完整显示",
+                if (isChecked) "隐私模式已开启，号码和通知内容将隐藏" else "隐私模式已关闭，号码和通知内容将完整显示",
                 Toast.LENGTH_SHORT
             ).show()
         }
 
         btnOpenTestTools.setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
+        }
+    }
+
+    private fun refreshPrivacySensitiveNotifications() {
+        lifecycleScope.launch {
+            HistoryQueueNotificationHelper.refresh(this@SettingsActivity)
+        }
+        if (MqttSyncService.globalMqttClient != null) {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, MqttSyncService::class.java).apply {
+                    action = MqttSyncService.ACTION_REFRESH_NOTIFICATION
+                }
+            )
         }
     }
 

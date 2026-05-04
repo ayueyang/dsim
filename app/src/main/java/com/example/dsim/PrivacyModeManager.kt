@@ -40,6 +40,38 @@ object PrivacyModeManager {
             .ifBlank { "未记录" }
     }
 
+    fun displaySmsNotificationBody(context: Context, body: String?): String {
+        val text = body?.trim().orEmpty()
+        if (!isEnabled(context)) {
+            return text
+        }
+        return if (text.isBlank()) "收到一条短信" else "隐私模式已隐藏短信内容"
+    }
+
+    fun displayCloudNotificationStatus(context: Context, content: String): String {
+        val text = content.trim()
+        if (!isEnabled(context)) {
+            return text
+        }
+        return when {
+            text.startsWith("云端状态：已恢复连接") -> "云端状态：已恢复连接"
+            text.startsWith("云端状态：已连接 ") -> "云端状态：已连接"
+            else -> maskPhoneLikeText(text)
+        }
+    }
+
+    fun displayNotificationDeviceName(
+        context: Context,
+        deviceName: String?,
+        fallback: String = "远端设备"
+    ): String {
+        val text = deviceName?.trim().orEmpty()
+        if (!isEnabled(context)) {
+            return text.ifBlank { fallback }
+        }
+        return fallback
+    }
+
     fun normalizePhone(phoneNumber: String?): String {
         return phoneNumber?.trim().orEmpty()
             .removeSuffix("(云端)")
@@ -67,4 +99,18 @@ object PrivacyModeManager {
 
         return if (hasPlus) "+$maskedDigits" else maskedDigits
     }
+
+    private fun maskPhoneLikeText(text: String): String {
+        return PHONE_LIKE_REGEX.replace(text) { match ->
+            val value = match.value
+            val digitCount = value.count { it.isDigit() }
+            if (digitCount > 7) {
+                maskPhone(value)
+            } else {
+                value
+            }
+        }
+    }
+
+    private val PHONE_LIKE_REGEX = Regex("""\+?\d[\d\s-]{7,}\d""")
 }

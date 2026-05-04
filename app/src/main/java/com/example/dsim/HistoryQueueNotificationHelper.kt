@@ -99,23 +99,28 @@ object HistoryQueueNotificationHelper {
     ): Notification {
         val requestedBySelf = isRequestedBySelf(context, snapshot)
         val requesterName = snapshot.requestedByDeviceName.ifBlank { "其他设备" }
+        val displayRequesterName = if (requestedBySelf) {
+            "本机"
+        } else {
+            PrivacyModeManager.displayNotificationDeviceName(context, requesterName)
+        }
         val sourceText = if (requestedBySelf) {
             "发起设备：本机"
         } else {
-            "发起设备：$requesterName"
+            "发起设备：$displayRequesterName"
         }
         val title = buildExecutionTitle(
             state = state,
             snapshot = snapshot,
             requestedBySelf = requestedBySelf,
-            requesterName = requesterName
+            requesterName = displayRequesterName
         )
         val compactLine = buildExecutionCompactLine(state, snapshot)
         val detailLines = buildList {
             add(sourceText)
             add(buildExecutionDetailLine(state, snapshot))
             buildExecutionQueueLine(snapshot)?.let(::add)
-            buildExecutionAddressLine(state)?.let(::add)
+            buildExecutionAddressLine(context, state)?.let(::add)
         }.filter { it.isNotBlank() }
 
         val contentIntent = buildContentIntent(context)
@@ -137,6 +142,7 @@ object HistoryQueueNotificationHelper {
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setOngoing(state.isRunning || snapshot.status == HistorySyncQueueManager.STATUS_QUEUED)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(contentIntent)
 
         when {
@@ -197,6 +203,7 @@ object HistoryQueueNotificationHelper {
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setOngoing(remoteInfo.ongoing)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(buildContentIntent(context))
 
         when {
@@ -323,11 +330,13 @@ object HistoryQueueNotificationHelper {
         return "队列顺序：第 $position / ${snapshot.totalDevices} 台"
     }
 
-    private fun buildExecutionAddressLine(state: HistoryImportUiState): String? {
+    private fun buildExecutionAddressLine(context: Context, state: HistoryImportUiState): String? {
         if (!state.isRunning) {
             return null
         }
-        return state.currentAddress.takeIf { it.isNotBlank() }?.let { "当前号码：$it" }
+        return state.currentAddress.takeIf { it.isNotBlank() }?.let {
+            "当前号码：${PrivacyModeManager.displayPhone(context, it)}"
+        }
     }
 
     private suspend fun loadRemoteQueueInfo(
@@ -352,8 +361,12 @@ object HistoryQueueNotificationHelper {
             }
 
             val targetCount = monitor.targetCount.coerceAtLeast(1)
+            val displayTargetName = PrivacyModeManager.displayNotificationDeviceName(
+                context,
+                monitor.targetNames
+            )
             val title = if (targetCount == 1 && monitor.targetNames.isNotBlank()) {
-                "你让 ${monitor.targetNames} 等待中"
+                "你让 $displayTargetName 等待中"
             } else {
                 "你让 $targetCount 台设备同步"
             }
@@ -362,11 +375,13 @@ object HistoryQueueNotificationHelper {
                 compactLine = if (targetCount == 1) "等待开始" else "$targetCount 台等待接单",
                 detailLines = buildList {
                     add(if (targetCount == 1 && monitor.targetNames.isNotBlank()) {
-                        "目标设备：${monitor.targetNames}"
+                        "目标设备：$displayTargetName"
                     } else {
                         "目标设备：共 $targetCount 台"
                     })
-                    monitor.targetNames.takeIf { it.isNotBlank() }?.let { add("设备列表：$it") }
+                    if (!PrivacyModeManager.isEnabled(context)) {
+                        monitor.targetNames.takeIf { it.isNotBlank() }?.let { add("设备列表：$it") }
+                    }
                 },
                 ongoing = true,
                 showIndeterminateProgress = true
@@ -386,9 +401,12 @@ object HistoryQueueNotificationHelper {
             totalTargets == 1 && monitor.targetNames.isNotBlank() -> monitor.targetNames
             else -> null
         }
+        val displaySingleTargetName = singleTargetName?.let {
+            PrivacyModeManager.displayNotificationDeviceName(context, it)
+        }
 
         val title = buildRequesterTitle(
-            singleTargetName = singleTargetName,
+            singleTargetName = displaySingleTargetName,
             totalTargets = totalTargets,
             progressProfile = progressProfile,
             nextQueued = nextQueued,
@@ -397,7 +415,7 @@ object HistoryQueueNotificationHelper {
             failedCount = failed.size
         )
         val compactLine = buildRequesterCompactLine(
-            singleTargetName = singleTargetName,
+            singleTargetName = displaySingleTargetName,
             totalTargets = totalTargets,
             progressProfile = progressProfile,
             nextQueued = nextQueued,
@@ -409,32 +427,34 @@ object HistoryQueueNotificationHelper {
         )
 
         val detailLines = buildList {
-            add(if (singleTargetName != null) {
-                "目标设备：$singleTargetName"
+            add(if (displaySingleTargetName != null) {
+                "目标设备：$displaySingleTargetName"
             } else {
                 "目标设备：共 $totalTargets 台"
             })
 
             if (progressProfile != null) {
+                val progressDeviceName = displayHistoryProfileName(context, progressProfile, totalTargets)
                 val queueSuffix = progressProfile.historyQueuePosition?.let {
                     "（第 $it / $totalTargets 台）"
                 }.orEmpty()
                 if (progressProfile.historyQueueProgressTotal > 0) {
                     add(
-                        "正在执行：${progressProfile.deviceName}$queueSuffix，已处理 " +
+                        "正在执行：$progressDeviceName$queueSuffix，已处理 " +
                             "${progressProfile.historyQueueProgressCurrent.coerceAtMost(progressProfile.historyQueueProgressTotal)}/" +
                             "${progressProfile.historyQueueProgressTotal} 条"
                     )
                 } else {
-                    add("正在执行：${progressProfile.deviceName}$queueSuffix")
+                    add("正在执行：$progressDeviceName$queueSuffix")
                 }
             } else if (nextQueued != null) {
                 val position = nextQueued.historyQueuePosition ?: 1
+                val queuedDeviceName = displayHistoryProfileName(context, nextQueued, totalTargets)
                 add(
                     if (position > 1) {
-                        "当前排队：${nextQueued.deviceName}（第 $position / $totalTargets 台）"
+                        "当前排队：$queuedDeviceName（第 $position / $totalTargets 台）"
                     } else {
-                        "等待执行：${nextQueued.deviceName}"
+                        "等待执行：$queuedDeviceName"
                     }
                 )
             } else if (completed.size >= totalTargets) {
@@ -444,8 +464,9 @@ object HistoryQueueNotificationHelper {
             }
 
             if (profiles.size <= 3) {
-                profiles.forEach { profile ->
-                    add("${profile.deviceName}：${buildRequesterDeviceStatus(profile, now)}")
+                profiles.forEachIndexed { index, profile ->
+                    val deviceName = displayHistoryProfileName(context, profile, totalTargets, index)
+                    add("$deviceName：${buildRequesterDeviceStatus(profile, now)}")
                 }
             }
         }
@@ -583,6 +604,23 @@ object HistoryQueueNotificationHelper {
             profile.historyQueueStatus == HistorySyncQueueManager.STATUS_COMPLETED -> "已完成"
             profile.historyQueueStatus == HistorySyncQueueManager.STATUS_FAILED -> "失败"
             else -> "空闲"
+        }
+    }
+
+    private fun displayHistoryProfileName(
+        context: Context,
+        profile: DeviceProfile,
+        totalTargets: Int,
+        index: Int? = null
+    ): String {
+        if (!PrivacyModeManager.isEnabled(context)) {
+            return profile.deviceName.ifBlank { "远端设备" }
+        }
+        val position = profile.historyQueuePosition ?: index?.plus(1)
+        return if (totalTargets > 1 && position != null) {
+            "第 $position 台设备"
+        } else {
+            "远端设备"
         }
     }
 

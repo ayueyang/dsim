@@ -43,6 +43,7 @@ class MqttSyncService : Service() {
     private var currentBroker: String = "tcp://broker.emqx.io:1883"
     private var currentTopic: String = ""
     private var currentPassword: String = ""
+    private var lastNotificationContent: String = "云端状态：正在启动守护服务"
 
     companion object {
         private const val NOTIFICATION_ID = 888
@@ -57,6 +58,7 @@ class MqttSyncService : Service() {
         const val ACTION_DISCONNECT = "com.example.dsim.DISCONNECT"
         const val ACTION_INIT_DAEMON = "com.example.dsim.INIT_DAEMON"
         const val ACTION_BROADCAST_DEVICE_PROFILE = "com.example.dsim.BROADCAST_DEVICE_PROFILE"
+        const val ACTION_REFRESH_NOTIFICATION = "com.example.dsim.REFRESH_NOTIFICATION"
 
         var globalMqttClient: MqttClient? = null
         private var staticTopic: String = ""
@@ -148,8 +150,13 @@ class MqttSyncService : Service() {
 
         startForeground(
             NOTIFICATION_ID,
-            createNotification("云端状态：正在启动守护服务")
+            createNotification(lastNotificationContent)
         )
+
+        if (action == ACTION_REFRESH_NOTIFICATION) {
+            updateNotification(lastNotificationContent)
+            return START_STICKY
+        }
 
         if (action == "ACTION_PUBLISH_MSG") {
             val payloadBase64 = intent.getStringExtra("PAYLOAD")
@@ -968,6 +975,7 @@ class MqttSyncService : Service() {
     }
 
     private fun createNotification(content: String): Notification {
+        val displayContent = PrivacyModeManager.displayCloudNotificationStatus(this, content)
         val intent = Intent(this, SmsListActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -978,18 +986,20 @@ class MqttSyncService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("dSIM 云端连接")
-            .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setContentText(displayContent)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(displayContent))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(pendingIntent)
             .build()
     }
 
     private fun updateNotification(content: String) {
+        lastNotificationContent = content
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, createNotification(content))
     }
