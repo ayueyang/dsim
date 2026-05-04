@@ -1,5 +1,6 @@
 package com.example.dsim
 
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -38,6 +39,7 @@ class SmsChatActivity : AppCompatActivity() {
     private var address: String = ""
     private var selectedMappingKey: String? = null
     private var activeSimConfigs: List<SimCardConfig> = emptyList()
+    private var senderPaletteMap: Map<String, SenderColorPalette> = emptyMap()
     private var targetMessageUuid: String? = null
     private var hasScrolledToTarget = false
 
@@ -105,9 +107,14 @@ class SmsChatActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
             dao.getMessagesByAddressFlow(address).collect { messages ->
-                configMap = dao.getAllSimConfigsForUi().associateBy { it.mappingKey }
+                val configsForUi = dao.getAllSimConfigsForUi()
+                configMap = configsForUi.associateBy { it.mappingKey }
 
                 withContext(Dispatchers.Main) {
+                    senderPaletteMap = SenderColorUtils.buildPaletteMap(
+                        this@SmsChatActivity,
+                        activeSimConfigs + configsForUi
+                    )
                     adapter.updateData(messages)
                     focusTargetMessageIfNeeded(messages)
                 }
@@ -169,6 +176,7 @@ class SmsChatActivity : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 activeSimConfigs = configs
+                refreshSenderPaletteMap(configs)
                 selectedMappingKey = preferredKey
                 bindSelectedSenderButton(configs.firstOrNull { it.mappingKey == preferredKey })
             }
@@ -178,9 +186,11 @@ class SmsChatActivity : AppCompatActivity() {
     private fun showSimSelector() {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
-            activeSimConfigs = sortSelectableConfigs(dao.getActiveSimConfigs())
+            val configs = sortSelectableConfigs(dao.getActiveSimConfigs())
 
             withContext(Dispatchers.Main) {
+                activeSimConfigs = configs
+                refreshSenderPaletteMap(configs)
                 if (activeSimConfigs.isEmpty()) {
                     Toast.makeText(this@SmsChatActivity, "没有可用号码，请先绑定", Toast.LENGTH_SHORT).show()
                     return@withContext
@@ -194,7 +204,11 @@ class SmsChatActivity : AppCompatActivity() {
 
                 tvSubtitle.text = buildSenderSheetSubtitle(activeSimConfigs)
                 rvOptions.layoutManager = LinearLayoutManager(this@SmsChatActivity)
-                rvOptions.adapter = SenderOptionAdapter(activeSimConfigs, selectedMappingKey) { selected ->
+                rvOptions.adapter = SenderOptionAdapter(
+                    activeSimConfigs,
+                    selectedMappingKey,
+                    senderPaletteMap
+                ) { selected ->
                         selectedMappingKey = selected.mappingKey
                         ConversationSenderStore.savePreferredMappingKey(
                             this@SmsChatActivity,
@@ -288,6 +302,10 @@ class SmsChatActivity : AppCompatActivity() {
         return PrivacyModeManager.displayPhone(this, phoneNumber)
     }
 
+    private fun refreshSenderPaletteMap(configs: List<SimCardConfig>) {
+        senderPaletteMap = SenderColorUtils.buildPaletteMap(this, configs + configMap.values)
+    }
+
     private fun bindSelectedSenderButton(config: SimCardConfig?) {
         if (config == null) {
             val palette = SenderColorUtils.neutral
@@ -298,10 +316,11 @@ class SmsChatActivity : AppCompatActivity() {
                 color = palette.accent,
                 radiusDp = 22f
             )
+            btnSelectSim.backgroundTintList = ColorStateList.valueOf(palette.accent)
             return
         }
 
-        val palette = SenderColorUtils.paletteForSim(this, config)
+        val palette = SenderColorUtils.paletteForSim(this, config, senderPaletteMap)
         btnSelectSim.text = buildSelectedSenderLabel(config)
         btnSelectSim.setTextColor(palette.onAccent)
         btnSelectSim.background = SenderColorUtils.roundedDrawable(
@@ -309,6 +328,7 @@ class SmsChatActivity : AppCompatActivity() {
             color = palette.accent,
             radiusDp = 22f
         )
+        btnSelectSim.backgroundTintList = ColorStateList.valueOf(palette.accent)
     }
 
     private fun buildSenderOptionTitle(config: SimCardConfig): String {
@@ -495,6 +515,7 @@ class SmsChatActivity : AppCompatActivity() {
     inner class SenderOptionAdapter(
         private val configs: List<SimCardConfig>,
         private val selectedKey: String?,
+        private val paletteMap: Map<String, SenderColorPalette>,
         private val onSelect: (SimCardConfig) -> Unit
     ) : RecyclerView.Adapter<SenderOptionAdapter.ViewHolder>() {
 
@@ -518,7 +539,7 @@ class SmsChatActivity : AppCompatActivity() {
             val isCloud = config.bindMode == "REMOTE_SHADOW"
             val isSelected = config.mappingKey == selectedKey
             val density = holder.itemView.resources.displayMetrics.density
-            val palette = SenderColorUtils.paletteForSim(holder.itemView.context, config)
+            val palette = SenderColorUtils.paletteForSim(holder.itemView.context, config, paletteMap)
 
             holder.badge.text = if (isCloud) "云" else "本"
             holder.badge.setTextColor(palette.onAccent)
@@ -608,7 +629,8 @@ class SmsChatActivity : AppCompatActivity() {
             val palette = SenderColorUtils.paletteForMessage(
                 holder.itemView.context,
                 sms,
-                simConfig
+                simConfig,
+                senderPaletteMap
             )
             holder.tvChatSource.text = SmsTagParserUtils.parseAndFormatTag(
                 mappingKey = sms.mappingKey,

@@ -93,17 +93,47 @@ object SenderColorUtils {
         )
     )
 
-    fun paletteForSim(context: Context, config: SimCardConfig): SenderColorPalette {
-        return paletteForKey(deviceKeyForSim(context, config))
+    fun buildPaletteMap(
+        context: Context,
+        configs: List<SimCardConfig>
+    ): Map<String, SenderColorPalette> {
+        val assigned = linkedMapOf<String, SenderColorPalette>()
+        val usedIndices = mutableSetOf<Int>()
+        configs.forEach { config ->
+            val key = deviceKeyForSim(context, config)
+            if (key.isBlank() || assigned.containsKey(key)) {
+                return@forEach
+            }
+
+            val preferredIndex = paletteIndexForKey(key)
+            val index = if (usedIndices.size < palettes.size) {
+                firstAvailableIndex(preferredIndex, usedIndices)
+            } else {
+                preferredIndex
+            }
+            usedIndices += index
+            assigned[key] = palettes[index]
+        }
+        return assigned
+    }
+
+    fun paletteForSim(
+        context: Context,
+        config: SimCardConfig,
+        paletteMap: Map<String, SenderColorPalette> = emptyMap()
+    ): SenderColorPalette {
+        val key = deviceKeyForSim(context, config)
+        return paletteMap[key] ?: paletteForKey(key)
     }
 
     fun paletteForMessage(
         context: Context,
         sms: SmsMessage,
-        simConfig: SimCardConfig?
+        simConfig: SimCardConfig?,
+        paletteMap: Map<String, SenderColorPalette> = emptyMap()
     ): SenderColorPalette {
         if (simConfig != null) {
-            return paletteForSim(context, simConfig)
+            return paletteForSim(context, simConfig, paletteMap)
         }
 
         val mappingDeviceId = HardwareProbeUtils.parseDeviceIdFromMappingKey(sms.mappingKey).orEmpty()
@@ -133,14 +163,7 @@ object SenderColorUtils {
         }
     }
 
-    private fun paletteForKey(key: String): SenderColorPalette {
-        if (key.isBlank()) {
-            return neutral
-        }
-        return palettes[Math.floorMod(key.hashCode(), palettes.size)]
-    }
-
-    private fun deviceKeyForSim(context: Context, config: SimCardConfig): String {
+    fun deviceKeyForSim(context: Context, config: SimCardConfig): String {
         val mappedDeviceId = HardwareProbeUtils.parseDeviceIdFromMappingKey(config.mappingKey).orEmpty()
         val deviceId = config.deviceId.ifBlank { mappedDeviceId }
         if (deviceId.isNotBlank()) {
@@ -158,6 +181,31 @@ object SenderColorUtils {
             config.phoneNumber.isNotBlank() -> "phone:${PrivacyModeManager.normalizePhone(config.phoneNumber)}"
             else -> ""
         }
+    }
+
+    private fun paletteForKey(key: String): SenderColorPalette {
+        if (key.isBlank()) {
+            return neutral
+        }
+        return palettes[paletteIndexForKey(key)]
+    }
+
+    private fun firstAvailableIndex(preferredIndex: Int, usedIndices: Set<Int>): Int {
+        if (preferredIndex !in usedIndices) {
+            return preferredIndex
+        }
+
+        for (offset in 1 until palettes.size) {
+            val index = (preferredIndex + offset) % palettes.size
+            if (index !in usedIndices) {
+                return index
+            }
+        }
+        return preferredIndex
+    }
+
+    private fun paletteIndexForKey(key: String): Int {
+        return Math.floorMod(key.hashCode(), palettes.size)
     }
 
     private fun dp(context: Context, value: Float): Float {
