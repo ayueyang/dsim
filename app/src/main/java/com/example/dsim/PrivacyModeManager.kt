@@ -61,22 +61,6 @@ object PrivacyModeManager {
         return maskPhoneLikeText(text)
     }
 
-    fun displayCloudNotificationExpandedStatus(context: Context, content: String): String {
-        val status = displayCloudNotificationStatus(context, content)
-        if (!isEnabled(context)) {
-            return status
-        }
-        return "$status\n隐私模式：已开启"
-    }
-
-    fun displayCloudNotificationCollapsedStatus(context: Context, content: String): String {
-        val status = displayCloudNotificationStatus(context, content)
-        if (!isEnabled(context)) {
-            return status
-        }
-        return "$status · 隐私模式已开启"
-    }
-
     fun displayNotificationDeviceName(
         context: Context,
         deviceName: String?,

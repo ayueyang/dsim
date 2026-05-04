@@ -45,6 +45,11 @@ class MqttSyncService : Service() {
     private var currentPassword: String = ""
     private var lastNotificationContent: String = "云端状态：正在启动守护服务"
 
+    private data class CloudNotificationCopy(
+        val title: String,
+        val body: String
+    )
+
     companion object {
         private const val NOTIFICATION_ID = 888
         private const val CHANNEL_ID = "dsim_sync_channel"
@@ -975,8 +980,7 @@ class MqttSyncService : Service() {
     }
 
     private fun createNotification(content: String): Notification {
-        val collapsedContent = PrivacyModeManager.displayCloudNotificationCollapsedStatus(this, content)
-        val expandedContent = PrivacyModeManager.displayCloudNotificationExpandedStatus(this, content)
+        val notificationCopy = buildCloudNotificationCopy(content)
         val intent = Intent(this, SmsListActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -986,9 +990,9 @@ class MqttSyncService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("dSIM 云端连接")
-            .setContentText(collapsedContent)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedContent))
+            .setContentTitle(notificationCopy.title)
+            .setContentText(notificationCopy.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationCopy.body))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -997,6 +1001,29 @@ class MqttSyncService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(pendingIntent)
             .build()
+    }
+
+    private fun buildCloudNotificationCopy(content: String): CloudNotificationCopy {
+        val safeContent = PrivacyModeManager.displayCloudNotificationStatus(this, content)
+        val rawStatus = safeContent
+            .removePrefix("云端状态：")
+            .removePrefix("云端状态:")
+            .trim()
+        val parts = rawStatus.split(Regex("[，,]"), limit = 2)
+        val state = parts.getOrNull(0)?.trim().orEmpty().ifBlank { "状态未知" }
+        val detail = parts.getOrNull(1)?.trim().orEmpty()
+        val bodyParts = buildList {
+            if (detail.isNotBlank()) {
+                add(detail)
+            }
+            if (PrivacyModeManager.isEnabled(this@MqttSyncService)) {
+                add("隐私模式已开启")
+            }
+        }
+        return CloudNotificationCopy(
+            title = "dSIM 云端状态：$state",
+            body = bodyParts.joinToString("·")
+        )
     }
 
     private fun updateNotification(content: String) {
