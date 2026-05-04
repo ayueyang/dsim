@@ -11,22 +11,47 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="设备中心"
-            android:textColor="#122033"
-            android:textSize="26sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:lineSpacingExtra="2dp"
-            android:text="先刷新，再选择需要同步的远程设备，最后点“开始排队同步”。任务会按顺序逐台执行。"
-            android:textColor="#66758A"
-            android:textSize="14sp" />
+            <ImageButton
+                android:id="@+id/btnBackDeviceManager"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_nav_back_button"
+                android:contentDescription="返回"
+                android:padding="10dp"
+                android:scaleType="center"
+                android:src="@drawable/ic_nav_back" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="设备中心"
+                    android:textColor="#122033"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="选择设备并按队列执行历史同步。"
+                    android:textColor="#66758A"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

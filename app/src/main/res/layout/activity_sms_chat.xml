@@ -5,19 +5,38 @@
     android:background="#F4F6F8"
     android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/tvChatTitle"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="68dp"
         android:background="#FFFFFF"
         android:elevation="2dp"
         android:gravity="center_vertical"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:singleLine="true"
-        android:textColor="#17212B"
-        android:textSize="20sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="18dp">
+
+        <ImageButton
+            android:id="@+id/btnBackChat"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_nav_back_button"
+            android:contentDescription="返回"
+            android:padding="10dp"
+            android:scaleType="center"
+            android:src="@drawable/ic_nav_back" />
+
+        <TextView
+            android:id="@+id/tvChatTitle"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:singleLine="true"
+            android:textColor="#17212B"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChatMessages"

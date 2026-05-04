@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.Switch
@@ -94,6 +95,9 @@ class SettingsActivity : AppCompatActivity() {
 
         title = "设置"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        findViewById<ImageButton>(R.id.btnBackSettings).setOnClickListener {
+            DsimNavigation.backToInboxOrFinish(this)
+        }
 
         tvCurrentDeviceName = findViewById(R.id.tvCurrentDeviceName)
         tvSystemDeviceName = findViewById(R.id.tvSystemDeviceName)
@@ -181,7 +185,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> {
-                finish()
+                DsimNavigation.backToInboxOrFinish(this)
                 true
             }
 

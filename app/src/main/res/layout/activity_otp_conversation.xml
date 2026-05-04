@@ -22,19 +22,15 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <ImageButton
                 android:id="@+id/tvBackOtp"
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="←"
-                android:textColor="#123B48"
-                android:textSize="25sp"
-                android:textStyle="bold" />
+                android:background="@drawable/bg_nav_back_button"
+                android:contentDescription="返回"
+                android:padding="10dp"
+                android:scaleType="center"
+                android:src="@drawable/ic_nav_back" />
 
             <LinearLayout
                 android:layout_width="0dp"

@@ -105,6 +105,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         title = "测试功能"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        findViewById<ImageButton>(R.id.btnBackMain).setOnClickListener {
+            DsimNavigation.backToInboxOrFinish(this)
+        }
 
         NotificationUtils.createNotificationChannel(this)
 
@@ -913,7 +916,7 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> {
-                finish()
+                DsimNavigation.backToInboxOrFinish(this)
                 true
             }
 

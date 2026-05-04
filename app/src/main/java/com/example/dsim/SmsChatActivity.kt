@@ -68,6 +68,9 @@ class SmsChatActivity : AppCompatActivity() {
         btnSelectSim = findViewById(R.id.btnSelectSim)
         etSmsInput = findViewById(R.id.etSmsInput)
         btnSendSms = findViewById(R.id.btnSendSms)
+        findViewById<ImageButton>(R.id.btnBackChat).setOnClickListener {
+            DsimNavigation.backToInboxOrFinish(this)
+        }
 
         tvChatTitle.text = buildChatTitle()
 

@@ -10,6 +10,7 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -48,6 +49,9 @@ class DeviceManagerActivity : AppCompatActivity() {
 
         title = "设备中心"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        findViewById<ImageButton>(R.id.btnBackDeviceManager).setOnClickListener {
+            DsimNavigation.backToInboxOrFinish(this)
+        }
 
         btnRefresh = findViewById(R.id.btnRefreshRadar)
         btnSelectAllOnline = findViewById(R.id.btnSelectAllOnline)
@@ -90,7 +94,7 @@ class DeviceManagerActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> {
-                finish()
+                DsimNavigation.backToInboxOrFinish(this)
                 true
             }
 

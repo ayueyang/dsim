@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -80,7 +81,7 @@ class SimBindingActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> {
-                finish()
+                DsimNavigation.backToInboxOrFinish(this)
                 true
             }
 
@@ -97,6 +98,8 @@ class SimBindingActivity : AppCompatActivity() {
             setPadding(dp(20), dp(20), dp(20), dp(32))
         }
         scrollView.addView(container)
+
+        container.addView(createHeader())
 
         tvStatus = TextView(this).apply {
             text = "管理本机物理 SIM 绑定。云端影子卡不会占用这里的本机卡槽名额。"
@@ -132,8 +135,8 @@ class SimBindingActivity : AppCompatActivity() {
                     .sortedWith(compareByDescending<SimCardConfig> { it.isActive }.thenBy { it.slotIndex ?: 99 })
             }
 
-            while (container.childCount > 2) {
-                container.removeViewAt(2)
+            while (container.childCount > 3) {
+                container.removeViewAt(3)
             }
             tvStatus.text = message ?: buildStatusText(configs)
 
@@ -145,6 +148,47 @@ class SimBindingActivity : AppCompatActivity() {
             configs.forEach { config ->
                 container.addView(createConfigCard(config))
             }
+        }
+    }
+
+    private fun createHeader(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(18))
+
+            addView(ImageButton(this@SimBindingActivity).apply {
+                setImageResource(R.drawable.ic_nav_back)
+                setBackgroundResource(R.drawable.bg_nav_back_button)
+                contentDescription = "返回"
+                scaleType = android.widget.ImageView.ScaleType.CENTER
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                setOnClickListener {
+                    DsimNavigation.backToInboxOrFinish(this@SimBindingActivity)
+                }
+            }, LinearLayout.LayoutParams(dp(44), dp(44)))
+
+            addView(LinearLayout(this@SimBindingActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@SimBindingActivity).apply {
+                    text = "SIM 绑定管理"
+                    setTextColor(Color.parseColor("#111827"))
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextSize(24f)
+                })
+                addView(TextView(this@SimBindingActivity).apply {
+                    text = "管理本机物理卡和卡槽绑定。"
+                    setTextColor(Color.parseColor("#64748B"))
+                    setTextSize(14f)
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }, LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                marginStart = dp(12)
+            })
         }
     }
 

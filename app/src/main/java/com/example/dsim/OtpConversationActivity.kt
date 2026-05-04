@@ -12,6 +12,7 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -56,7 +57,9 @@ class OtpConversationActivity : AppCompatActivity() {
         tvOtpSubtitle = findViewById(R.id.tvOtpSubtitle)
         tvRuleSettings = findViewById(R.id.tvRuleSettings)
 
-        findViewById<TextView>(R.id.tvBackOtp).setOnClickListener { finish() }
+        findViewById<ImageButton>(R.id.tvBackOtp).setOnClickListener {
+            DsimNavigation.backToInboxOrFinish(this)
+        }
         tvRuleSettings.setOnClickListener { showRuleSettingsDialog() }
 
         layoutManager = LinearLayoutManager(this)
