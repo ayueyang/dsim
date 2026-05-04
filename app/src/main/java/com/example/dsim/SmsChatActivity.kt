@@ -98,9 +98,7 @@ class SmsChatActivity : AppCompatActivity() {
         tvChatTitle.text = buildChatTitle()
         adapter.notifyDataSetChanged()
         val selectedConfig = activeSimConfigs.firstOrNull { it.mappingKey == selectedMappingKey }
-        if (selectedConfig != null) {
-            btnSelectSim.text = buildSelectedSenderLabel(selectedConfig)
-        }
+        bindSelectedSenderButton(selectedConfig)
     }
 
     private fun loadMessages() {
@@ -172,9 +170,7 @@ class SmsChatActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 activeSimConfigs = configs
                 selectedMappingKey = preferredKey
-                configs.firstOrNull { it.mappingKey == preferredKey }?.let {
-                    btnSelectSim.text = buildSelectedSenderLabel(it)
-                }
+                bindSelectedSenderButton(configs.firstOrNull { it.mappingKey == preferredKey })
             }
         }
     }
@@ -205,7 +201,7 @@ class SmsChatActivity : AppCompatActivity() {
                             address,
                             selected.mappingKey
                         )
-                        btnSelectSim.text = buildSelectedSenderLabel(selected)
+                        bindSelectedSenderButton(selected)
                         Toast.makeText(
                             this@SmsChatActivity,
                             "已选择: ${buildSenderDisplay(selected)}",
@@ -290,6 +286,29 @@ class SmsChatActivity : AppCompatActivity() {
 
     private fun displayPhoneNumber(phoneNumber: String): String {
         return PrivacyModeManager.displayPhone(this, phoneNumber)
+    }
+
+    private fun bindSelectedSenderButton(config: SimCardConfig?) {
+        if (config == null) {
+            val palette = SenderColorUtils.neutral
+            btnSelectSim.text = "选择号码"
+            btnSelectSim.setTextColor(Color.WHITE)
+            btnSelectSim.background = SenderColorUtils.roundedDrawable(
+                context = this,
+                color = palette.accent,
+                radiusDp = 22f
+            )
+            return
+        }
+
+        val palette = SenderColorUtils.paletteForSim(this, config)
+        btnSelectSim.text = buildSelectedSenderLabel(config)
+        btnSelectSim.setTextColor(palette.onAccent)
+        btnSelectSim.background = SenderColorUtils.roundedDrawable(
+            context = this,
+            color = palette.accent,
+            radiusDp = 22f
+        )
     }
 
     private fun buildSenderOptionTitle(config: SimCardConfig): String {
@@ -499,20 +518,32 @@ class SmsChatActivity : AppCompatActivity() {
             val isCloud = config.bindMode == "REMOTE_SHADOW"
             val isSelected = config.mappingKey == selectedKey
             val density = holder.itemView.resources.displayMetrics.density
+            val palette = SenderColorUtils.paletteForSim(holder.itemView.context, config)
 
             holder.badge.text = if (isCloud) "云" else "本"
-            holder.badge.setBackgroundResource(
-                if (isCloud) R.drawable.bg_sender_badge_cloud else R.drawable.bg_sender_badge_local
+            holder.badge.setTextColor(palette.onAccent)
+            holder.badge.background = SenderColorUtils.roundedDrawable(
+                context = holder.itemView.context,
+                color = palette.accent,
+                radiusDp = 19f
             )
             holder.title.text = buildSenderOptionTitle(config)
             holder.phone.text = displayPhoneNumber(config.phoneNumber).ifBlank { "未填写号码" }
             holder.meta.text = buildSenderOptionMeta(config)
             holder.selected.visibility = if (isSelected) View.VISIBLE else View.GONE
+            holder.selected.setTextColor(palette.accent)
+            holder.selected.background = SenderColorUtils.roundedDrawable(
+                context = holder.itemView.context,
+                color = palette.strongSoft,
+                radiusDp = 10f
+            )
+            holder.phone.setTextColor(Color.parseColor(if (isSelected) "#17212B" else "#2D3742"))
+            holder.meta.setTextColor(if (isSelected) palette.source else Color.parseColor("#8A94A3"))
 
             holder.card.setCardBackgroundColor(
-                Color.parseColor(if (isSelected) "#F4F0FF" else "#F8FAFC")
+                if (isSelected) palette.soft else Color.parseColor("#F8FAFC")
             )
-            holder.card.strokeColor = Color.parseColor(if (isSelected) "#6750A4" else "#E5EAF1")
+            holder.card.strokeColor = if (isSelected) palette.accent else Color.parseColor("#E5EAF1")
             holder.card.strokeWidth = (density * if (isSelected) 1.6f else 1f).toInt()
             holder.card.setOnClickListener { onSelect(config) }
         }
@@ -574,6 +605,11 @@ class SmsChatActivity : AppCompatActivity() {
             val localDeviceId = HardwareProbeUtils.getDeviceId(holder.itemView.context)
             val isLocalMessage = sms.deviceId == localDeviceId
             val simConfig = configMap[sms.mappingKey]
+            val palette = SenderColorUtils.paletteForMessage(
+                holder.itemView.context,
+                sms,
+                simConfig
+            )
             holder.tvChatSource.text = SmsTagParserUtils.parseAndFormatTag(
                 mappingKey = sms.mappingKey,
                 simConfig = simConfig,
@@ -585,15 +621,15 @@ class SmsChatActivity : AppCompatActivity() {
             val params = holder.bubbleContainer.layoutParams as LinearLayout.LayoutParams
             if (sms.type == 2) {
                 params.gravity = Gravity.END
-                holder.cardBubble.setCardBackgroundColor(Color.parseColor("#DDF6D5"))
-                holder.tvChatBody.setTextColor(Color.parseColor("#1B3520"))
-                holder.tvChatSource.setTextColor(Color.parseColor("#6B8F70"))
-                bindSendStatus(holder, sms)
+                holder.cardBubble.setCardBackgroundColor(palette.strongSoft)
+                holder.tvChatBody.setTextColor(palette.dark)
+                holder.tvChatSource.setTextColor(palette.source)
+                bindSendStatus(holder, sms, palette)
             } else {
                 params.gravity = Gravity.START
                 holder.cardBubble.setCardBackgroundColor(Color.WHITE)
                 holder.tvChatBody.setTextColor(Color.parseColor("#2D3742"))
-                holder.tvChatSource.setTextColor(Color.parseColor("#8A94A3"))
+                holder.tvChatSource.setTextColor(palette.source)
                 holder.tvChatStatus.visibility = View.GONE
                 holder.tvChatStatus.setOnClickListener(null)
             }
@@ -611,24 +647,24 @@ class SmsChatActivity : AppCompatActivity() {
             holder.cardBubble.strokeColor = when {
                 highlight -> Color.parseColor("#F59E0B")
                 sms.type == 2 -> Color.TRANSPARENT
-                else -> Color.parseColor("#E7ECF2")
+                else -> palette.border
             }
         }
 
         override fun getItemCount(): Int = list.size
 
-        private fun bindSendStatus(holder: ViewHolder, sms: SmsMessage) {
+        private fun bindSendStatus(holder: ViewHolder, sms: SmsMessage, palette: SenderColorPalette) {
             holder.tvChatStatus.visibility = View.VISIBLE
             holder.tvChatStatus.setOnClickListener(null)
             when (sms.status) {
                 0 -> {
                     holder.tvChatStatus.text = "发送中"
-                    holder.tvChatStatus.setTextColor(Color.parseColor("#6B8F70"))
+                    holder.tvChatStatus.setTextColor(palette.source)
                 }
 
                 1 -> {
                     holder.tvChatStatus.text = "已发送"
-                    holder.tvChatStatus.setTextColor(Color.parseColor("#7A8A7F"))
+                    holder.tvChatStatus.setTextColor(palette.source)
                 }
 
                 else -> {
