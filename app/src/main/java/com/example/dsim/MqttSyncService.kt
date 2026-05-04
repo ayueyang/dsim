@@ -48,6 +48,8 @@ class MqttSyncService : Service() {
         private const val NOTIFICATION_ID = 888
         private const val CHANNEL_ID = "dsim_sync_channel"
         private const val MQTT_ACTION_HISTORY_SYNC_ACK = "HISTORY_SYNC_ACK"
+        private const val MQTT_ACTION_SEND_CMD = "SEND_CMD"
+        private const val MQTT_ACTION_SEND_CMD_RESULT = "SEND_CMD_RESULT"
         private const val DEVICE_SNAPSHOT_INTERVAL_MS = 20_000L
         const val MQTT_ACTION_HISTORY_QUEUE_BATCH = "HISTORY_QUEUE_BATCH"
 
@@ -422,7 +424,12 @@ class MqttSyncService : Service() {
                 return
             }
 
-            if (action == "SEND_CMD") {
+            if (action == MQTT_ACTION_SEND_CMD_RESULT) {
+                handleSendCommandResult(jsonObject, localDeviceId)
+                return
+            }
+
+            if (action == MQTT_ACTION_SEND_CMD) {
                 handleSendCommand(jsonObject)
                 return
             }
@@ -605,12 +612,24 @@ class MqttSyncService : Service() {
         val smsBody = jsonObject.optString("body")
         val mappingKey = jsonObject.optString("mappingKey")
         val uuid = jsonObject.optString("uuid")
+        val requesterDeviceId = jsonObject.optString("deviceId")
 
         val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
         val myConfig = dao.getSimConfigByKey(mappingKey)
 
-        if (myConfig == null || !myConfig.isActive || myConfig.bindMode == "REMOTE_SHADOW") {
-            Log.w("dSIM_SyncService", "收到发信指令，但目标卡不可用: $mappingKey")
+        if (myConfig == null || myConfig.bindMode == "REMOTE_SHADOW") {
+            Log.d("dSIM_SyncService", "收到非本机目标发信指令，忽略: $mappingKey")
+            return
+        }
+
+        if (!myConfig.isActive) {
+            Log.w("dSIM_SyncService", "收到发信指令，但目标卡已停用: $mappingKey")
+            publishSendCommandResult(
+                uuid = uuid,
+                targetDeviceId = requesterDeviceId,
+                success = false,
+                message = "目标发送卡已停用"
+            )
             return
         }
 
@@ -674,8 +693,92 @@ class MqttSyncService : Service() {
                 topic = currentTopic,
                 password = currentPassword
             )
+            publishSendCommandResult(
+                uuid = uuid,
+                targetDeviceId = requesterDeviceId,
+                success = true,
+                message = null
+            )
         } catch (e: Exception) {
+            if (uuid.isNotBlank() && dao.checkUuidExists(uuid) > 0) {
+                dao.updateMessageStatus(uuid, -1, e.message)
+            }
+            publishSendCommandResult(
+                uuid = uuid,
+                targetDeviceId = requesterDeviceId,
+                success = false,
+                message = e.message ?: "发送失败"
+            )
             Log.e("dSIM_SyncService", "执行发信指令失败", e)
+        }
+    }
+
+    private suspend fun handleSendCommandResult(jsonObject: JSONObject, localDeviceId: String) {
+        val targetDeviceId = jsonObject.optString("targetDeviceId")
+        if (targetDeviceId.isNotBlank() && targetDeviceId != localDeviceId) {
+            return
+        }
+
+        val uuid = jsonObject.optString("uuid")
+        if (uuid.isBlank()) {
+            return
+        }
+
+        val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
+        if (dao.checkUuidExists(uuid) <= 0) {
+            return
+        }
+
+        val success = jsonObject.optBoolean("success", false)
+        val message = jsonObject.optString("message").takeIf { it.isNotBlank() }
+        dao.updateMessageStatus(
+            uuid = uuid,
+            newStatus = if (success) 1 else -1,
+            error = if (success) null else message
+        )
+    }
+
+    private fun publishSendCommandResult(
+        uuid: String,
+        targetDeviceId: String,
+        success: Boolean,
+        message: String?
+    ) {
+        if (
+            uuid.isBlank() ||
+            targetDeviceId.isBlank() ||
+            globalMqttClient?.isConnected != true ||
+            currentTopic.isBlank() ||
+            currentPassword.isBlank()
+        ) {
+            return
+        }
+
+        try {
+            val resultJson = JSONObject().apply {
+                put("action", MQTT_ACTION_SEND_CMD_RESULT)
+                put("uuid", uuid)
+                put("targetDeviceId", targetDeviceId)
+                put("deviceId", HardwareProbeUtils.getDeviceId(this@MqttSyncService))
+                put("deviceName", DeviceNameManager.getDisplayName(this@MqttSyncService))
+                put("success", success)
+                if (!message.isNullOrBlank()) {
+                    put("message", message.take(120))
+                }
+                put("timestamp", System.currentTimeMillis())
+            }.toString()
+
+            val encryptedResult = DsimCryptoUtils.encryptMessage(resultJson, currentPassword)
+            if (encryptedResult == "ENCRYPTION_ERROR") {
+                return
+            }
+
+            val resultMessage = MqttMessage(encryptedResult.toByteArray(Charsets.UTF_8)).apply {
+                qos = 1
+            }
+            globalMqttClient?.publish(currentTopic, resultMessage)
+        } catch (e: Exception) {
+            Log.e("dSIM_SyncService", "发送短信结果回执失败", e)
         }
     }
 

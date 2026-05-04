@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DeviceProfile::class,
         DeviceHistoryRecord::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class DsimDatabase : RoomDatabase() {
@@ -153,6 +153,31 @@ abstract class DsimDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    UPDATE `sms_messages`
+                    SET `uuid` = 'legacy_' || `id`
+                    WHERE `uuid` IS NULL OR `uuid` = ''
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    DELETE FROM `sms_messages`
+                    WHERE `id` NOT IN (
+                        SELECT MAX(`id`)
+                        FROM `sms_messages`
+                        GROUP BY `uuid`
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_sms_messages_uuid` ON `sms_messages` (`uuid`)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): DsimDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -160,7 +185,12 @@ abstract class DsimDatabase : RoomDatabase() {
                     DsimDatabase::class.java,
                     "dsim_core_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5
+                    )
                     .build()
                 INSTANCE = instance
                 instance

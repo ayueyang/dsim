@@ -139,7 +139,33 @@ class SmsChatActivity : AppCompatActivity() {
     private fun loadSimConfigs() {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
-            activeSimConfigs = sortSelectableConfigs(dao.getActiveSimConfigs())
+            val configs = sortSelectableConfigs(dao.getActiveSimConfigs())
+            val mappingKeys = configs.map { it.mappingKey }
+            val savedKey = ConversationSenderStore.getPreferredMappingKey(
+                this@SmsChatActivity,
+                address
+            )
+            val currentKey = selectedMappingKey
+            val preferredKey = when {
+                !currentKey.isNullOrBlank() && currentKey in mappingKeys -> currentKey
+                !savedKey.isNullOrBlank() && savedKey in mappingKeys -> savedKey
+                configs.size == 1 -> configs.first().mappingKey
+                mappingKeys.isNotEmpty() -> {
+                    val localDeviceId = HardwareProbeUtils.getDeviceId(this@SmsChatActivity)
+                    dao.findPreferredLocalMappingKeyForAddress(localDeviceId, address, mappingKeys)
+                        ?: dao.findMostUsedLocalMappingKey(localDeviceId, mappingKeys)
+                }
+
+                else -> null
+            }
+
+            withContext(Dispatchers.Main) {
+                activeSimConfigs = configs
+                selectedMappingKey = preferredKey
+                configs.firstOrNull { it.mappingKey == preferredKey }?.let {
+                    btnSelectSim.text = buildSelectedSenderLabel(it)
+                }
+            }
         }
     }
 
@@ -164,6 +190,11 @@ class SmsChatActivity : AppCompatActivity() {
                 rvOptions.layoutManager = LinearLayoutManager(this@SmsChatActivity)
                 rvOptions.adapter = SenderOptionAdapter(activeSimConfigs, selectedMappingKey) { selected ->
                         selectedMappingKey = selected.mappingKey
+                        ConversationSenderStore.savePreferredMappingKey(
+                            this@SmsChatActivity,
+                            address,
+                            selected.mappingKey
+                        )
                         btnSelectSim.text = buildSelectedSenderLabel(selected)
                         Toast.makeText(
                             this@SmsChatActivity,
@@ -281,7 +312,8 @@ class SmsChatActivity : AppCompatActivity() {
             Toast.makeText(this, "请先输入短信内容", Toast.LENGTH_SHORT).show()
             return
         }
-        if (selectedMappingKey == null) {
+        val mappingKey = selectedMappingKey
+        if (mappingKey == null) {
             Toast.makeText(this, "请先选择发送号码", Toast.LENGTH_SHORT).show()
             return
         }
@@ -320,23 +352,22 @@ class SmsChatActivity : AppCompatActivity() {
                     deviceId = HardwareProbeUtils.getDeviceId(this@SmsChatActivity),
                     simId = -1,
                     iccid = null,
-                    mappingKey = selectedMappingKey!!
+                    mappingKey = mappingKey
                 )
                 dao.insertMessage(sentMsg)
-
-                val cmdJson = JSONObject().apply {
-                    put("action", "SEND_CMD")
-                    put("target", address)
-                    put("body", body)
-                    put("mappingKey", selectedMappingKey)
-                    put("uuid", uuid)
-                }.toString()
-
-                val encryptedPayload = DsimCryptoUtils.encryptMessage(cmdJson, password)
-                val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
-                    qos = 1
-                }
-                MqttSyncService.globalMqttClient?.publish(topic, message)
+                ConversationSenderStore.savePreferredMappingKey(
+                    this@SmsChatActivity,
+                    address,
+                    mappingKey
+                )
+                publishSendCommand(
+                    uuid = uuid,
+                    target = address,
+                    body = body,
+                    mappingKey = mappingKey,
+                    password = password,
+                    topic = topic
+                )
 
                 withContext(Dispatchers.Main) {
                     etSmsInput.text.clear()
@@ -353,6 +384,83 @@ class SmsChatActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun retrySend(sms: SmsMessage) {
+        if (sms.uuid.isBlank()) {
+            Toast.makeText(this, "这条短信缺少编号，不能重试", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
+                val password = prefs.getString("PASSWORD", "") ?: ""
+                val topic = prefs.getString("TOPIC", "") ?: ""
+                if (password.isBlank() || topic.isBlank()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@SmsChatActivity, "缺少云端配置", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                if (MqttSyncService.globalMqttClient?.isConnected != true) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@SmsChatActivity, "云端未连接，无法重试", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
+                    .updateMessageStatus(sms.uuid, 0, null)
+                publishSendCommand(
+                    uuid = sms.uuid,
+                    target = sms.address,
+                    body = sms.body,
+                    mappingKey = sms.mappingKey,
+                    password = password,
+                    topic = topic
+                )
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@SmsChatActivity, "正在重试发送", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
+                    .updateMessageStatus(sms.uuid, -1, e.message)
+                android.util.Log.e("dSIM_Chat", "重试发送异常", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@SmsChatActivity, "重试失败: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun publishSendCommand(
+        uuid: String,
+        target: String,
+        body: String,
+        mappingKey: String,
+        password: String,
+        topic: String
+    ) {
+        val cmdJson = JSONObject().apply {
+            put("action", "SEND_CMD")
+            put("target", target)
+            put("body", body)
+            put("mappingKey", mappingKey)
+            put("uuid", uuid)
+            put("deviceId", HardwareProbeUtils.getDeviceId(this@SmsChatActivity))
+            put("deviceName", DeviceNameManager.getDisplayName(this@SmsChatActivity))
+        }.toString()
+
+        val encryptedPayload = DsimCryptoUtils.encryptMessage(cmdJson, password)
+        if (encryptedPayload == "ENCRYPTION_ERROR") {
+            throw IllegalStateException("发送指令加密失败")
+        }
+        val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
+            qos = 1
+        }
+        MqttSyncService.globalMqttClient?.publish(topic, message)
     }
 
     inner class SenderOptionAdapter(
@@ -434,6 +542,7 @@ class SmsChatActivity : AppCompatActivity() {
             val tvChatTime: TextView = view.findViewById(R.id.tvChatTime)
             val tvChatBody: TextView = view.findViewById(R.id.tvChatBody)
             val tvChatSource: TextView = view.findViewById(R.id.tvChatSource)
+            val tvChatStatus: TextView = view.findViewById(R.id.tvChatStatus)
             val bubbleContainer: LinearLayout = view.findViewById(R.id.bubbleContainer)
             val cardBubble: MaterialCardView = view.findViewById(R.id.cardBubble)
         }
@@ -469,11 +578,14 @@ class SmsChatActivity : AppCompatActivity() {
                 holder.cardBubble.setCardBackgroundColor(Color.parseColor("#DDF6D5"))
                 holder.tvChatBody.setTextColor(Color.parseColor("#1B3520"))
                 holder.tvChatSource.setTextColor(Color.parseColor("#6B8F70"))
+                bindSendStatus(holder, sms)
             } else {
                 params.gravity = Gravity.START
                 holder.cardBubble.setCardBackgroundColor(Color.WHITE)
                 holder.tvChatBody.setTextColor(Color.parseColor("#2D3742"))
                 holder.tvChatSource.setTextColor(Color.parseColor("#8A94A3"))
+                holder.tvChatStatus.visibility = View.GONE
+                holder.tvChatStatus.setOnClickListener(null)
             }
             holder.bubbleContainer.layoutParams = params
 
@@ -494,5 +606,27 @@ class SmsChatActivity : AppCompatActivity() {
         }
 
         override fun getItemCount(): Int = list.size
+
+        private fun bindSendStatus(holder: ViewHolder, sms: SmsMessage) {
+            holder.tvChatStatus.visibility = View.VISIBLE
+            holder.tvChatStatus.setOnClickListener(null)
+            when (sms.status) {
+                0 -> {
+                    holder.tvChatStatus.text = "发送中"
+                    holder.tvChatStatus.setTextColor(Color.parseColor("#6B8F70"))
+                }
+
+                1 -> {
+                    holder.tvChatStatus.text = "已发送"
+                    holder.tvChatStatus.setTextColor(Color.parseColor("#7A8A7F"))
+                }
+
+                else -> {
+                    holder.tvChatStatus.text = "发送失败 · 点此重试"
+                    holder.tvChatStatus.setTextColor(Color.parseColor("#B42318"))
+                    holder.tvChatStatus.setOnClickListener { retrySend(sms) }
+                }
+            }
+        }
     }
 }

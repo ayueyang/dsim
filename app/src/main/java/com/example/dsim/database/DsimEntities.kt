@@ -4,7 +4,10 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "sms_messages")
+@Entity(
+    tableName = "sms_messages",
+    indices = [Index(value = ["uuid"], unique = true)]
+)
 data class SmsMessage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uuid: String,
