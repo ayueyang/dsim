@@ -137,6 +137,23 @@
                 android:textSize="13sp" />
 
             <Switch
+                android:id="@+id/switchOtpCopyToastSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="复制验证码后提示"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Android 13 及以上由系统显示剪贴板提示；此开关控制 dSIM 在旧系统上的额外提示。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <Switch
                 android:id="@+id/switchPrivacyModeSetting"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

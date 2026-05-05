@@ -90,6 +90,10 @@
 
         <!-- 2. 必须组件：彩信接收器 -->
         <receiver
+            android:name=".OtpCopyReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".MmsReceiver"
             android:permission="android.permission.BROADCAST_WAP_PUSH"
             android:exported="true">

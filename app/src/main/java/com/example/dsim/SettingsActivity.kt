@@ -46,6 +46,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnManageSimSetting: Button
     private lateinit var btnViewDevicesSetting: Button
     private lateinit var switchMuteNotificationsSetting: Switch
+    private lateinit var switchOtpCopyToastSetting: Switch
     private lateinit var switchPrivacyModeSetting: Switch
     private lateinit var btnOpenTestTools: Button
     private lateinit var etMqttBrokerSetting: EditText
@@ -110,6 +111,7 @@ class SettingsActivity : AppCompatActivity() {
         btnManageSimSetting = findViewById(R.id.btnManageSimSetting)
         btnViewDevicesSetting = findViewById(R.id.btnViewDevicesSetting)
         switchMuteNotificationsSetting = findViewById(R.id.switchMuteNotificationsSetting)
+        switchOtpCopyToastSetting = findViewById(R.id.switchOtpCopyToastSetting)
         switchPrivacyModeSetting = findViewById(R.id.switchPrivacyModeSetting)
         btnOpenTestTools = findViewById(R.id.btnOpenTestTools)
         etMqttBrokerSetting = findViewById(R.id.etMqttBrokerSetting)
@@ -274,6 +276,16 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(
                 this,
                 if (isChecked) "新消息通知已静音" else "新消息通知已恢复响铃",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        switchOtpCopyToastSetting.isChecked = OtpCopyPreferenceStore.shouldShowCopyToast(this)
+        switchOtpCopyToastSetting.setOnCheckedChangeListener { _, isChecked ->
+            OtpCopyPreferenceStore.setShowCopyToast(this, isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) "复制验证码后将显示 dSIM 提示" else "已关闭 dSIM 复制提示",
                 Toast.LENGTH_SHORT
             ).show()
         }

@@ -98,6 +98,8 @@ object NotificationUtils {
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
 
+        buildOtpCopyAction(context, sms)?.let { builder.addAction(it) }
+
         if (!isMuted) {
             builder.setDefaults(NotificationCompat.DEFAULT_ALL)
             builder.setVibrate(longArrayOf(0, 250, 250, 250))
@@ -106,5 +108,36 @@ object NotificationUtils {
         with(NotificationManagerCompat.from(context)) {
             notify((System.currentTimeMillis() % 10000).toInt(), builder.build())
         }
+    }
+
+    private fun buildOtpCopyAction(context: Context, sms: SmsMessage): NotificationCompat.Action? {
+        val otpItem = OtpConversationUtils.toOtpItem(
+            context = context,
+            sms = sms,
+            settings = OtpRulesStore.loadSettings(context),
+            override = OtpRulesStore.getOverride(context, sms.uuid)
+        ) ?: return null
+
+        val copyIntent = Intent(context, OtpCopyReceiver::class.java).apply {
+            action = OtpCopyReceiver.ACTION_COPY_OTP
+            putExtra(OtpCopyReceiver.EXTRA_OTP_CODE, otpItem.code)
+            putExtra(OtpCopyReceiver.EXTRA_SMS_UUID, sms.uuid)
+            putExtra(OtpCopyReceiver.EXTRA_SMS_ADDRESS, sms.address)
+            putExtra(OtpCopyReceiver.EXTRA_MAPPING_KEY, sms.mappingKey)
+        }
+        val copyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            sms.uuid.hashCode(),
+            copyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_save,
+            "复制验证码",
+            copyPendingIntent
+        )
+            .setAuthenticationRequired(true)
+            .build()
     }
 }
