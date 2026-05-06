@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.dsim.database.DsimDatabase
+import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ class OtpConversationActivity : AppCompatActivity() {
     private lateinit var adapter: OtpAdapter
 
     private var allMessagesCache: List<SmsMessage> = emptyList()
+    private var simConfigsByKeyCache: Map<String, SimCardConfig> = emptyMap()
     private var firstRender = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +73,7 @@ class OtpConversationActivity : AppCompatActivity() {
             val dao = DsimDatabase.getDatabase(this@OtpConversationActivity).dsimDao()
             dao.getAllSmsMessagesFlow().collect { messages ->
                 allMessagesCache = messages
+                simConfigsByKeyCache = dao.getAllSimConfigsForUi().associateBy { it.mappingKey }
                 withContext(Dispatchers.Main) {
                     renderOtpMessages()
                 }
@@ -79,7 +82,7 @@ class OtpConversationActivity : AppCompatActivity() {
     }
 
     private fun renderOtpMessages() {
-        val otpItems = OtpConversationUtils.buildOtpItems(this, allMessagesCache)
+        val otpItems = OtpConversationUtils.buildOtpItems(this, allMessagesCache, simConfigsByKeyCache)
         adapter.updateData(otpItems)
         tvOtpEmpty.visibility = if (otpItems.isEmpty()) View.VISIBLE else View.GONE
         tvOtpSubtitle.text = when {

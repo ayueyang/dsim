@@ -1,6 +1,7 @@
 package com.example.dsim
 
 import android.content.Context
+import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
 import java.util.Locale
 import kotlin.math.abs
@@ -44,7 +45,8 @@ object OtpConversationUtils {
 
     fun buildOtpItems(
         context: Context,
-        messages: List<SmsMessage>
+        messages: List<SmsMessage>,
+        simConfigsByKey: Map<String, SimCardConfig> = emptyMap()
     ): List<OtpMessageItem> {
         val settings = OtpRulesStore.loadSettings(context)
         val overrides = OtpRulesStore.getAllOverrides(context)
@@ -52,7 +54,7 @@ object OtpConversationUtils {
             .asSequence()
             .filter { it.type == 1 }
             .mapNotNull { sms ->
-                toOtpItem(context, sms, settings, overrides[sms.uuid])
+                toOtpItem(context, sms, settings, overrides[sms.uuid], simConfigsByKey)
             }
             .sortedBy { it.sms.timestamp }
             .toList()
@@ -62,7 +64,8 @@ object OtpConversationUtils {
         context: Context,
         sms: SmsMessage,
         settings: OtpRuleSettings,
-        override: OtpMessageOverride?
+        override: OtpMessageOverride?,
+        simConfigsByKey: Map<String, SimCardConfig> = emptyMap()
     ): OtpMessageItem? {
         val body = sms.body.trim()
         if (body.isBlank()) {
@@ -88,8 +91,7 @@ object OtpConversationUtils {
             ?: sms.address.ifBlank { "未知来源" }
 
         val senderLabel = PrivacyModeManager.displayMessageText(context, senderLabelRaw)
-        val sourceLabel = PrivacyModeManager.displayConversationAddress(context, sms.address)
-            .ifBlank { sms.address.ifBlank { "未知通道" } }
+        val sourceLabel = buildSourceLabel(context, sms, simConfigsByKey)
         val previewBody = PrivacyModeManager.displayMessageText(
             context,
             body.replace('\n', ' ').replace(Regex("\\s+"), " ").trim()
@@ -102,6 +104,29 @@ object OtpConversationUtils {
             sourceLabel = sourceLabel,
             previewBody = previewBody,
         )
+    }
+
+    private fun buildSourceLabel(
+        context: Context,
+        sms: SmsMessage,
+        simConfigsByKey: Map<String, SimCardConfig>
+    ): String {
+        val simConfig = simConfigsByKey[sms.mappingKey]
+        val localDeviceId = HardwareProbeUtils.getDeviceId(context)
+        val baseSource = SmsTagParserUtils.parseAndFormatTag(
+            mappingKey = sms.mappingKey,
+            simConfig = simConfig,
+            isLocalMessage = sms.deviceId == localDeviceId,
+            localDeviceName = DeviceNameManager.getDisplayName(context),
+            maskPhoneNumbers = PrivacyModeManager.isEnabled(context)
+        )
+        val peerAddress = PrivacyModeManager.displayConversationAddress(context, sms.address)
+            .ifBlank { sms.address.ifBlank { "未知发件人" } }
+        return when (sms.type) {
+            1 -> "发件人 $peerAddress · $baseSource"
+            2 -> "收件人 $peerAddress · $baseSource"
+            else -> baseSource
+        }
     }
 
     fun matchesOtpByRules(settings: OtpRuleSettings, body: String): Boolean {
