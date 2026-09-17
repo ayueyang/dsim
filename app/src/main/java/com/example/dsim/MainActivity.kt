@@ -111,10 +111,12 @@ class MainActivity : AppCompatActivity() {
 
         NotificationUtils.createNotificationChannel(this)
 
-        val daemonIntent = android.content.Intent(this, MqttSyncService::class.java).apply {
-            action = MqttSyncService.ACTION_INIT_DAEMON
+        if (UsageModeManager.canUseCloud(this)) {
+            val daemonIntent = android.content.Intent(this, MqttSyncService::class.java).apply {
+                action = MqttSyncService.ACTION_INIT_DAEMON
+            }
+            androidx.core.content.ContextCompat.startForegroundService(this, daemonIntent)
         }
-        androidx.core.content.ContextCompat.startForegroundService(this, daemonIntent)
 
         // 初始化视图
         btnOpenInbox = findViewById(R.id.btnOpenInbox)

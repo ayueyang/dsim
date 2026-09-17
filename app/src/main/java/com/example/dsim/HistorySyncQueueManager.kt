@@ -281,6 +281,9 @@ object HistorySyncQueueManager {
         context: Context,
         targets: List<DeviceProfile>
     ): String = withContext(Dispatchers.IO) {
+        if (!UsageModeManager.canUseCloud(context)) {
+            throw IllegalStateException("本地模式已关闭云端设备队列")
+        }
         val client = MqttSyncService.globalMqttClient
         if (client?.isConnected != true) {
             throw IllegalStateException("云端未连接")
@@ -436,6 +439,9 @@ object HistorySyncQueueManager {
     }
 
     suspend fun maybeBroadcastLocalSnapshot(context: Context, force: Boolean = false) {
+        if (!UsageModeManager.canUseCloud(context)) {
+            return
+        }
         if (!MqttSyncService.isConnected()) {
             return
         }

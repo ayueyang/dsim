@@ -8,6 +8,12 @@ import androidx.core.content.ContextCompat
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
+            if (!OnboardingStateStore.isAntiFraudAcknowledged(context)) {
+                return
+            }
+            if (!UsageModeManager.canUseCloud(context)) {
+                return
+            }
             val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
             val isAutoConnect = CloudSettingsManager.isAutoConnectEnabled(context)
             val broker = prefs.getString("BROKER", "") ?: ""

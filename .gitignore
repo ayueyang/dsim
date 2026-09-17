@@ -49,3 +49,9 @@ google-services.json
 # Local test artifacts
 /tmp_db/
 /tmp_previews/
+
+# UI 参考素材与竞品安装包（含第三方二进制，体积大，不入库）
+/ui_prototypes/
+
+# 本地智能体工作数据
+/.workbuddy/

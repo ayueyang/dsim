@@ -44,6 +44,7 @@ class SmsListActivity : AppCompatActivity() {
     private lateinit var setupGuideContainer: View
     private lateinit var tvSetupGuideStatus: TextView
     private lateinit var tvHomeSubtitle: TextView
+    private lateinit var btnSetupGuideAction: Button
     private var allMessagesCache: List<SmsMessage> = emptyList()
     private var profileEditorState: ProfileEditorState? = null
 
@@ -88,12 +89,6 @@ class SmsListActivity : AppCompatActivity() {
         var avatarImageUri: String
     )
 
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        startCloudDaemon()
-    }
-
     private val contactsPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -133,10 +128,12 @@ class SmsListActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
+        if (routeToOnboardingIfNeeded()) {
+            return
+        }
         setContentView(R.layout.activity_sms_list)
         title = "信息"
         NotificationUtils.createNotificationChannel(this)
-        requestNotificationPermissionIfNeeded()
         startCloudDaemon()
 
         val recyclerView = findViewById<RecyclerView>(R.id.recyclerViewSms)
@@ -146,6 +143,7 @@ class SmsListActivity : AppCompatActivity() {
         setupGuideContainer = findViewById(R.id.setupGuideContainer)
         tvSetupGuideStatus = findViewById(R.id.tvSetupGuideStatus)
         tvHomeSubtitle = findViewById(R.id.tvHomeSubtitle)
+        btnSetupGuideAction = btnSetupGuideSettings
 
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = ConversationAdapter(emptyList())
@@ -156,7 +154,7 @@ class SmsListActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         btnSetupGuideSettings.setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
+            startActivity(Intent(this, OnboardingActivity::class.java))
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -174,19 +172,25 @@ class SmsListActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return
+    private fun routeToOnboardingIfNeeded(): Boolean {
+        val hasSeenOnboarding = OnboardingStateStore.hasSeenOnboarding(this)
+        val antiFraudAcknowledged = OnboardingStateStore.isAntiFraudAcknowledged(this)
+        if (hasSeenOnboarding && antiFraudAcknowledged) {
+            return false
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        startActivity(
+            Intent(this, OnboardingActivity::class.java).apply {
+                putExtra(OnboardingActivity.EXTRA_RETURN_HOME_ON_FINISH, true)
+            }
+        )
+        finish()
+        return true
     }
 
     private fun startCloudDaemon() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            return
+        }
         ContextCompat.startForegroundService(
             this,
             Intent(this, MqttSyncService::class.java).apply {
@@ -203,31 +207,18 @@ class SmsListActivity : AppCompatActivity() {
 
     private fun updateSetupGuide() {
         lifecycleScope.launch {
-            val hasLocalSimBinding = withContext(Dispatchers.IO) {
-                DsimDatabase.getDatabase(this@SmsListActivity)
-                    .dsimDao()
-                    .getActiveSimConfigs()
-                    .any { it.bindMode != "REMOTE_SHADOW" }
+            val pendingItems = withContext(Dispatchers.IO) {
+                SetupChecklistManager.missingItems(this@SmsListActivity)
             }
 
-            val missingItems = mutableListOf<String>()
-            if (!DefaultSmsManager.isDefaultSmsApp(this@SmsListActivity)) {
-                missingItems += "默认短信应用"
-            }
-            if (!hasLocalSimBinding) {
-                missingItems += "SIM 绑定"
-            }
-            if (!CloudSettingsManager.hasConnectionConfig(this@SmsListActivity)) {
-                missingItems += "云端通道"
-            }
-
-            if (missingItems.isEmpty()) {
+            if (pendingItems.isEmpty()) {
                 setupGuideContainer.visibility = View.GONE
                 return@launch
             }
 
             setupGuideContainer.visibility = View.VISIBLE
-            tvSetupGuideStatus.text = "待配置：${missingItems.joinToString("、")}。配置完成后，这里会自动收起。"
+            btnSetupGuideAction.text = "继续引导"
+            tvSetupGuideStatus.text = "待补完：${pendingItems.joinToString("、")}。你可以先进入 dSIM，后面继续补齐。"
         }
     }
 

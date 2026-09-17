@@ -123,6 +123,9 @@ open class SmsReceiver : BroadcastReceiver() {
         sms: SmsMessage,
         sourcePhoneNumber: String
     ) {
+        if (!UsageModeManager.canUploadIncomingSms(context)) {
+            return
+        }
         val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
         val password = prefs.getString("PASSWORD", "") ?: ""
         val topic = prefs.getString("TOPIC", "") ?: ""

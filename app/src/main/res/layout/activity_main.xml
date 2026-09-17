@@ -234,7 +234,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="配置 Broker、主题和加密口令后，就可以让多台设备共享短信与指令。"
+                    android:text="配置 MQTT 服务器、房间号和加密密码后，就可以让多台设备共享短信与指令。"
                     android:textColor="#6B7280"
                     android:textSize="13sp" />
 
@@ -244,7 +244,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
                     android:background="#F7F9FC"
-                    android:hint="云端 Broker，例如 tcp://broker.emqx.io:1883"
+                    android:hint="MQTT 服务器，例如 tcp://broker.emqx.io:1883"
                     android:padding="14dp"
                     android:text="tcp://broker.emqx.io:1883"
                     android:textSize="14sp" />
@@ -255,7 +255,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:background="#F7F9FC"
-                    android:hint="同步主题，例如 dsim_channel_001"
+                    android:hint="房间号（MQTT Topic），例如 dsim_channel_001"
                     android:padding="14dp"
                     android:textSize="14sp" />
 
@@ -265,7 +265,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
                     android:background="#FFF6F6"
-                    android:hint="端到端加密口令"
+                    android:hint="加密密码"
                     android:inputType="textPassword"
                     android:padding="14dp"
                     android:textColor="#C62828"

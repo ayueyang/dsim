@@ -62,6 +62,7 @@ class MqttSyncService : Service() {
         const val ACTION_CONNECT = "com.example.dsim.CONNECT"
         const val ACTION_DISCONNECT = "com.example.dsim.DISCONNECT"
         const val ACTION_INIT_DAEMON = "com.example.dsim.INIT_DAEMON"
+        const val ACTION_APPLY_LOCAL_MODE = "com.example.dsim.APPLY_LOCAL_MODE"
         const val ACTION_BROADCAST_DEVICE_PROFILE = "com.example.dsim.BROADCAST_DEVICE_PROFILE"
         const val ACTION_REFRESH_NOTIFICATION = "com.example.dsim.REFRESH_NOTIFICATION"
 
@@ -152,14 +153,41 @@ class MqttSyncService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
+        val isLocalOnlyMode = UsageModeManager.isLocalOnly(this)
 
         startForeground(
             NOTIFICATION_ID,
             createNotification(lastNotificationContent)
         )
 
+        if (action == ACTION_APPLY_LOCAL_MODE) {
+            manualDisconnectInCurrentSession = false
+            stopSnapshotHeartbeat()
+            try {
+                globalMqttClient?.disconnect()
+                globalMqttClient?.close()
+            } catch (_: Exception) {
+            }
+            globalMqttClient = null
+            connectionStateFlow.value = false
+            updateNotification(buildLocalModeMessage())
+            return START_STICKY
+        }
+
         if (action == ACTION_REFRESH_NOTIFICATION) {
+            if (isLocalOnlyMode) {
+                updateNotification(buildLocalModeMessage())
+                return START_STICKY
+            }
             updateNotification(lastNotificationContent)
+            return START_STICKY
+        }
+
+        if (isLocalOnlyMode &&
+            action in setOf(ACTION_CONNECT, ACTION_INIT_DAEMON, ACTION_BROADCAST_DEVICE_PROFILE)
+        ) {
+            connectionStateFlow.value = false
+            updateNotification(buildLocalModeMessage())
             return START_STICKY
         }
 
@@ -286,6 +314,10 @@ class MqttSyncService : Service() {
         return "云端状态：已手动断开，本次不会自动重连"
     }
 
+    private fun buildLocalModeMessage(): String {
+        return "云端状态：本地模式，云端入口已关闭"
+    }
+
     private fun startSnapshotHeartbeat() {
         if (snapshotHeartbeatJob?.isActive == true) {
             return
@@ -299,7 +331,7 @@ class MqttSyncService : Service() {
                 try {
                     publishDeviceSnapshot()
                 } catch (e: Exception) {
-                    Log.e("dSIM_SyncService", "瀹氭椂骞挎挱璁惧蹇収澶辫触", e)
+                    Log.e("dSIM_SyncService", "定时广播设备快照失败", e)
                 }
             }
         }
@@ -311,6 +343,11 @@ class MqttSyncService : Service() {
     }
 
     private suspend fun connectAndSubscribe() {
+        if (!UsageModeManager.canUseCloud(this@MqttSyncService)) {
+            connectionStateFlow.value = false
+            updateNotification(buildLocalModeMessage())
+            return
+        }
         try {
             val deviceId = HardwareProbeUtils.getDeviceId(this)
             val clientId = "dSIM_SEC_${deviceId}_${System.currentTimeMillis()}"
@@ -339,6 +376,7 @@ class MqttSyncService : Service() {
                     connectionStateFlow.value = false
                     stopSnapshotHeartbeat()
                     val message = when {
+                        UsageModeManager.isLocalOnly(this@MqttSyncService) -> buildLocalModeMessage()
                         manualDisconnectInCurrentSession -> buildManualDisconnectMessage()
                         autoReconnectEnabled -> "云端状态：已断开，正在自动重连"
                         else -> "云端状态：已断开，自动重连已关闭"
@@ -466,6 +504,18 @@ class MqttSyncService : Service() {
             pendingHistoryAckUuid = sms.uuid
             pendingHistoryAckTargetDeviceId = sms.deviceId
 
+            if (!UsageModeManager.canReceiveCloudSms(this@MqttSyncService)) {
+                if (payload.historyImport) {
+                    publishHistorySyncAck(
+                        uuid = sms.uuid,
+                        targetDeviceId = sms.deviceId,
+                        success = true,
+                        message = "ignored_by_mode"
+                    )
+                }
+                return
+            }
+
             val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
             if (dao.checkUuidExists(sms.uuid) > 0) {
                 dao.updateMessageStatus(sms.uuid, sms.status, sms.errorMsg)
@@ -579,7 +629,7 @@ class MqttSyncService : Service() {
             }
             globalMqttClient?.publish(currentTopic, ackMessage)
         } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "鍙戦€佸巻鍙插悓姝ュ洖鎵уけ璐", e)
+            Log.e("dSIM_SyncService", "发送历史同步回执失败", e)
         }
     }
 
@@ -653,7 +703,7 @@ class MqttSyncService : Service() {
 
             if (resolvedSubscriptionId == null && localActiveSimCount > 1) {
                 /*
-                throw IllegalStateException("鏃犳硶瀹氫綅鍒版寚瀹?SIM 鍗★紝涓哄緥鍙戦敊鍗″凡鍙栨秷")
+                throw IllegalStateException("无法定位到指定 SIM 卡，为避免发错卡已取消")
                 */
                 throw IllegalStateException("Unable to resolve target SIM for SEND_CMD on multi-SIM device")
             }
@@ -661,7 +711,7 @@ class MqttSyncService : Service() {
             val smsManager = createSmsManager(resolvedSubscriptionId)
             Log.d(
                 "dSIM_SyncService",
-                "鎵ц SEND_CMD锛宮appingKey=$mappingKey, subId=$resolvedSubscriptionId, target=$target"
+                "执行 SEND_CMD：mappingKey=$mappingKey, subId=$resolvedSubscriptionId, target=$target"
             )
             smsManager.sendTextMessage(target, null, smsBody, null, null)
             val sentTimestamp = System.currentTimeMillis()

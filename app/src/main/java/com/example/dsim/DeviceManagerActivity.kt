@@ -222,6 +222,10 @@ class DeviceManagerActivity : AppCompatActivity() {
     )
 
     private fun toggleSelectOnlineDevices() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            Toast.makeText(this, "本地模式已关闭云端设备选择", Toast.LENGTH_SHORT).show()
+            return
+        }
         val now = System.currentTimeMillis()
         val eligibleIds = latestProfiles.filter { canSelectForQueue(it, now) }.map { it.deviceId }
         if (eligibleIds.isEmpty()) {
@@ -241,6 +245,10 @@ class DeviceManagerActivity : AppCompatActivity() {
     }
 
     private fun enqueueSelectedDevices() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            Toast.makeText(this, "本地模式已关闭远程历史同步队列", Toast.LENGTH_SHORT).show()
+            return
+        }
         val now = System.currentTimeMillis()
         val selectedProfiles = latestProfiles.filter { selectedDeviceIds.contains(it.deviceId) && canSelectForQueue(it, now) }
         if (selectedProfiles.isEmpty()) {
@@ -275,6 +283,14 @@ class DeviceManagerActivity : AppCompatActivity() {
     }
 
     private fun updateSelectionUi() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            btnQueueSelected.isEnabled = false
+            btnQueueSelected.alpha = 0.6f
+            btnSelectAllOnline.isEnabled = false
+            btnSelectAllOnline.alpha = 0.6f
+            tvSelectionHint.text = "本地模式已关闭云端设备扫描和远程历史同步。切回只接收或只转发后，这里会恢复。"
+            return
+        }
         val now = System.currentTimeMillis()
         val eligibleCount = latestProfiles.count { canSelectForQueue(it, now) }
         val selectedCount = latestProfiles.count {
@@ -328,6 +344,9 @@ class DeviceManagerActivity : AppCompatActivity() {
     }
 
     private fun sendRadarPing(): Boolean {
+        if (!UsageModeManager.canUseCloud(this)) {
+            return false
+        }
         val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
         val password = prefs.getString("PASSWORD", "") ?: ""
         val topic = prefs.getString("TOPIC", "") ?: ""

@@ -9,11 +9,13 @@ import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MenuItem
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -34,7 +36,21 @@ import java.util.Date
 import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
+    companion object {
+        private const val UI_PREFS_NAME = "dSIM_UI_PREFS"
+        private const val KEY_USAGE_MODE_EXPANDED = "USAGE_MODE_EXPANDED"
+    }
 
+    private lateinit var tvUsageModeStatus: TextView
+    private lateinit var tvUsageModeDetail: TextView
+    private lateinit var tvAntiFraudStatus: TextView
+    private lateinit var usageModeExpandedContent: LinearLayout
+    private lateinit var btnUsageModeToggle: TextView
+    private lateinit var btnModeBidirectional: Button
+    private lateinit var btnModeReceiveOnly: Button
+    private lateinit var btnModeForwardOnly: Button
+    private lateinit var btnModeLocalOnly: Button
+    private lateinit var btnReopenOnboarding: Button
     private lateinit var tvCurrentDeviceName: TextView
     private lateinit var tvSystemDeviceName: TextView
     private lateinit var etDeviceName: EditText
@@ -67,6 +83,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private var statusRefreshVersion = 0
     private var currentHistoryState = HistoryImportUiState()
+    private var isUsageModeExpanded = false
 
     private var historyQueueDialog: AlertDialog? = null
     private var tvHistoryQueueStage: TextView? = null
@@ -93,6 +110,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        insertUsageModeSection()
 
         title = "设置"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -131,6 +149,7 @@ class SettingsActivity : AppCompatActivity() {
         tvSystemHistoryImportStatus = findViewById(R.id.tvSystemHistoryImportStatus)
 
         refreshDeviceNameUi()
+        bindUsageModeSettings()
         bindPrimarySetupSettings()
         bindCloudSettings()
         bindSystemHistoryImportSettings()
@@ -173,8 +192,10 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshUsageModeUi()
         refreshDefaultSmsUi()
         refreshCloudConnectionUi()
+        refreshSystemHistoryImportUi()
         startQueueRefreshTicker()
     }
 
@@ -194,6 +215,320 @@ class SettingsActivity : AppCompatActivity() {
             else -> super.onOptionsItemSelected(item)
         }
     }
+
+    private fun insertUsageModeSection() {
+        val contentRoot = findViewById<ViewGroup>(android.R.id.content)
+        val scrollView = contentRoot.getChildAt(0) as? ScrollView ?: return
+        val linearRoot = scrollView.getChildAt(0) as? LinearLayout ?: return
+        isUsageModeExpanded = getSharedPreferences(UI_PREFS_NAME, MODE_PRIVATE)
+            .getBoolean(KEY_USAGE_MODE_EXPANDED, false)
+
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(20).toFloat()
+                setColor(Color.WHITE)
+            }
+            elevation = dp(3).toFloat()
+        }
+
+        section.addView(
+            TextView(this).apply {
+                text = "使用模式"
+                setTextColor(Color.parseColor("#111827"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                setTypeface(typeface, Typeface.BOLD)
+            }
+        )
+
+        tvUsageModeStatus = TextView(this).apply {
+            setTextColor(Color.parseColor("#243246"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(Color.parseColor("#EAF0F7"))
+            }
+        }
+        btnUsageModeToggle = TextView(this).apply {
+            setTextColor(Color.parseColor("#64748B"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+        }
+        section.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(14), 0, 0)
+                addView(
+                    tvUsageModeStatus,
+                    LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1f
+                    )
+                )
+                addView(createSpacer(8))
+                addView(btnUsageModeToggle)
+                setOnClickListener {
+                    setUsageModeExpanded(!isUsageModeExpanded)
+                }
+            }
+        )
+        tvUsageModeStatus.setOnClickListener {
+            setUsageModeExpanded(!isUsageModeExpanded)
+        }
+        btnUsageModeToggle.setOnClickListener {
+            setUsageModeExpanded(!isUsageModeExpanded)
+        }
+
+        usageModeExpandedContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(14), 0, 0)
+        }
+
+        tvUsageModeDetail = TextView(this).apply {
+            setTextColor(Color.parseColor("#64748B"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setLineSpacing(0f, 1.16f)
+            setPadding(0, 0, 0, 0)
+        }
+        usageModeExpandedContent.addView(tvUsageModeDetail)
+
+        tvAntiFraudStatus = TextView(this).apply {
+            setTextColor(Color.parseColor("#8A1F2D"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setLineSpacing(0f, 1.16f)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.parseColor("#FFF2F2"))
+                setStroke(dp(1), Color.parseColor("#F2C8CC"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(14)
+            }
+        }
+        usageModeExpandedContent.addView(tvAntiFraudStatus)
+
+        val topButtonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(16), 0, 0)
+        }
+        val bottomButtonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, 0)
+        }
+
+        btnModeBidirectional = createUsageModeButton("双向同步")
+        btnModeReceiveOnly = createUsageModeButton("只接收")
+        btnModeForwardOnly = createUsageModeButton("只转发")
+        btnModeLocalOnly = createUsageModeButton("本地模式")
+
+        topButtonRow.addView(btnModeBidirectional)
+        topButtonRow.addView(createSpacer(8))
+        topButtonRow.addView(btnModeReceiveOnly)
+        bottomButtonRow.addView(btnModeForwardOnly)
+        bottomButtonRow.addView(createSpacer(8))
+        bottomButtonRow.addView(btnModeLocalOnly)
+        usageModeExpandedContent.addView(topButtonRow)
+        usageModeExpandedContent.addView(bottomButtonRow)
+
+        btnReopenOnboarding = Button(this).apply {
+            text = "重新打开首次引导"
+            textSize = 14f
+            setAllCaps(false)
+            setTextColor(Color.parseColor("#123B48"))
+            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#EAF0F7"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(14)
+            }
+        }
+        usageModeExpandedContent.addView(btnReopenOnboarding)
+        section.addView(usageModeExpandedContent)
+
+        linearRoot.addView(
+            section,
+            1,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(16)
+                bottomMargin = dp(0)
+            }
+        )
+    }
+
+    private fun createUsageModeButton(text: String): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 13f
+            setAllCaps(false)
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(8), 0, dp(8), 0)
+            elevation = 0f
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                dp(46),
+                1f
+            )
+        }
+    }
+
+    private fun bindUsageModeSettings() {
+        btnModeBidirectional.setOnClickListener { selectUsageMode(UsageMode.BIDIRECTIONAL_SYNC) }
+        btnModeReceiveOnly.setOnClickListener { selectUsageMode(UsageMode.RECEIVE_ONLY) }
+        btnModeForwardOnly.setOnClickListener { selectUsageMode(UsageMode.FORWARD_ONLY) }
+        btnModeLocalOnly.setOnClickListener { selectUsageMode(UsageMode.LOCAL_ONLY) }
+        btnReopenOnboarding.setOnClickListener {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+        refreshUsageModeUi()
+    }
+
+    private fun selectUsageMode(mode: UsageMode) {
+        UsageModeManager.applyMode(this, mode)
+        refreshUsageModeUi()
+        refreshCloudConnectionUi()
+        refreshSystemHistoryImportUi()
+        broadcastDeviceProfileIfNeeded()
+        Toast.makeText(this, "当前模式：${UsageModeManager.displayName(mode)}", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun refreshUsageModeUi() {
+        val mode = UsageModeManager.getMode(this)
+        val modePalette = usageModePalette(mode)
+        tvUsageModeStatus.text = "当前模式：${UsageModeManager.displayName(mode)}"
+        tvUsageModeDetail.text = UsageModeManager.description(mode)
+        tvUsageModeStatus.text = UsageModeManager.displayName(mode)
+        (tvUsageModeStatus.background as? GradientDrawable)?.apply {
+            setColor(Color.parseColor(modePalette.soft))
+        }
+        tvUsageModeStatus.setTextColor(Color.parseColor(modePalette.text))
+        tvAntiFraudStatus.text = if (OnboardingStateStore.isAntiFraudAcknowledged(this)) {
+            "高风险提醒：已完成。仍请记住，房间号（MQTT Topic）、加密密码、验证码和短信内容都不要告诉任何人。"
+        } else {
+            "高风险提醒：未完成。别人要求你安装 dSIM，极可能是诈骗；不要把房间号、加密密码、验证码和短信内容告诉任何人，也不要把主力机交给别人远程指导配置。"
+        }
+        tvAntiFraudStatus.text = if (OnboardingStateStore.isAntiFraudAcknowledged(this)) {
+            "高风险提醒：已完成。仍请记住，房间号（MQTT Topic）、加密密码、验证码和短信内容都不要告诉任何人。"
+        } else {
+            "高风险提醒：未完成。别人要求你安装 dSIM，极可能是诈骗；不要把房间号、加密密码、验证码和短信内容告诉任何人，也不要把主力机交给别人远程指导配置。"
+        }
+        tvAntiFraudStatus.setTextColor(
+            Color.parseColor(
+                if (OnboardingStateStore.isAntiFraudAcknowledged(this)) "#1F6B4F" else "#8A1F2D"
+            )
+        )
+        (tvAntiFraudStatus.background as? GradientDrawable)?.apply {
+            setColor(
+                Color.parseColor(
+                    if (OnboardingStateStore.isAntiFraudAcknowledged(this@SettingsActivity)) "#ECFDF3" else "#FFF2F2"
+                )
+            )
+            setStroke(
+                dp(1),
+                Color.parseColor(
+                    if (OnboardingStateStore.isAntiFraudAcknowledged(this@SettingsActivity)) "#B7E4C7" else "#F2C8CC"
+                )
+            )
+        }
+
+        styleUsageModeButton(btnModeBidirectional, UsageMode.BIDIRECTIONAL_SYNC, mode == UsageMode.BIDIRECTIONAL_SYNC)
+        styleUsageModeButton(btnModeReceiveOnly, UsageMode.RECEIVE_ONLY, mode == UsageMode.RECEIVE_ONLY)
+        styleUsageModeButton(btnModeForwardOnly, UsageMode.FORWARD_ONLY, mode == UsageMode.FORWARD_ONLY)
+        styleUsageModeButton(btnModeLocalOnly, UsageMode.LOCAL_ONLY, mode == UsageMode.LOCAL_ONLY)
+        btnReopenOnboarding.text = if (OnboardingStateStore.hasSeenOnboarding(this)) {
+            "重新打开首次引导"
+        } else {
+            "继续首次引导"
+        }
+        btnUsageModeToggle.text = if (isUsageModeExpanded) "收起" else "展开"
+        setUsageModeExpanded(isUsageModeExpanded, persist = false)
+        btnReopenOnboarding.text = if (OnboardingStateStore.hasSeenOnboarding(this)) {
+            "重新打开首次引导"
+        } else {
+            "继续首次引导"
+        }
+    }
+
+    private fun styleUsageModeButton(button: Button, selected: Boolean) {
+        button.backgroundTintList = ColorStateList.valueOf(
+            Color.parseColor(if (selected) "#123B48" else "#EAF0F7")
+        )
+        button.setTextColor(
+            Color.parseColor(if (selected) "#FFFFFF" else "#123B48")
+        )
+        button.alpha = if (selected) 1f else 0.92f
+    }
+
+    private fun styleUsageModeButton(button: Button, mode: UsageMode, selected: Boolean) {
+        val palette = usageModePalette(mode)
+        button.background = GradientDrawable().apply {
+            cornerRadius = dp(16).toFloat()
+            if (selected) {
+                setColor(Color.parseColor(palette.text))
+                setStroke(dp(1), Color.parseColor(palette.text))
+            } else {
+                setColor(Color.WHITE)
+                setStroke(dp(1), Color.parseColor("#D8E1EC"))
+            }
+        }
+        button.setTextColor(Color.parseColor(if (selected) "#FFFFFF" else "#243246"))
+        button.alpha = 1f
+    }
+
+    private fun setUsageModeExpanded(expanded: Boolean, persist: Boolean = true) {
+        isUsageModeExpanded = expanded
+        usageModeExpandedContent.visibility = if (expanded) LinearLayout.VISIBLE else LinearLayout.GONE
+        btnUsageModeToggle.text = if (expanded) "收起" else "展开"
+        if (persist) {
+            getSharedPreferences(UI_PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_USAGE_MODE_EXPANDED, expanded)
+                .apply()
+        }
+    }
+
+    private fun usageModePalette(mode: UsageMode): AccentPalette {
+        return when (mode) {
+            UsageMode.BIDIRECTIONAL_SYNC -> AccentPalette(
+                soft = "#F1EBFF",
+                text = "#6A43D8"
+            )
+
+            UsageMode.RECEIVE_ONLY -> AccentPalette(
+                soft = "#EAF7F1",
+                text = "#1F8A5B"
+            )
+
+            UsageMode.FORWARD_ONLY -> AccentPalette(
+                soft = "#FFF3E8",
+                text = "#C46A1B"
+            )
+
+            UsageMode.LOCAL_ONLY -> AccentPalette(
+                soft = "#EDF2F7",
+                text = "#475569"
+            )
+        }
+    }
+
+    private data class AccentPalette(
+        val soft: String,
+        val text: String
+    )
 
     private fun observeHistoryQueueState() {
         lifecycleScope.launch {
@@ -334,13 +669,18 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun bindCloudSettings() {
         val config = CloudSettingsManager.getConfig(this)
+        etMqttBrokerSetting.hint = "MQTT 服务器"
+        etMqttTopicSetting.hint = "房间号（MQTT Topic）"
+        etMqttPasswordSetting.hint = "加密密码"
         etMqttBrokerSetting.setText(config.broker)
         etMqttTopicSetting.setText(config.topic)
         etMqttPasswordSetting.setText(config.password)
 
         btnSaveCloudConfig.setOnClickListener {
             if (saveCloudConfigFromInputs()) {
-                if (CloudSettingsManager.isAutoConnectEnabled(this)) {
+                if (UsageModeManager.canUseCloud(this) &&
+                    CloudSettingsManager.isAutoConnectEnabled(this)
+                ) {
                     startCloudDaemon()
                 }
                 Toast.makeText(this, "云端配置已保存", Toast.LENGTH_SHORT).show()
@@ -349,6 +689,10 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnConnectCloudSetting.setOnClickListener {
+            if (!UsageModeManager.canUseCloud(this)) {
+                Toast.makeText(this, "本地模式已关闭云端连接", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             if (MqttSyncService.isConnected()) {
                 showManualDisconnectDialog()
             } else if (saveCloudConfigFromInputs()) {
@@ -371,7 +715,10 @@ class SettingsActivity : AppCompatActivity() {
 
         switchAutoConnectSetting.setOnCheckedChangeListener { _, isChecked ->
             CloudSettingsManager.setAutoConnectEnabled(this, isChecked)
-            if (isChecked && CloudSettingsManager.hasConnectionConfig(this)) {
+            if (UsageModeManager.canUseCloud(this) &&
+                isChecked &&
+                CloudSettingsManager.hasConnectionConfig(this)
+            ) {
                 startCloudDaemon()
             }
             Toast.makeText(
@@ -392,6 +739,9 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun startCloudDaemon() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            return
+        }
         ContextCompat.startForegroundService(
             this,
             Intent(this, MqttSyncService::class.java).apply {
@@ -415,11 +765,11 @@ class SettingsActivity : AppCompatActivity() {
         val password = etMqttPasswordSetting.text.toString().trim()
 
         if (topic.isBlank()) {
-            etMqttTopicSetting.error = "请输入同步主题"
+            etMqttTopicSetting.error = "请输入房间号（MQTT Topic）"
             return false
         }
         if (password.isBlank()) {
-            etMqttPasswordSetting.error = "请输入加密口令"
+            etMqttPasswordSetting.error = "请输入加密密码"
             return false
         }
 
@@ -431,6 +781,26 @@ class SettingsActivity : AppCompatActivity() {
         val isConnected = MqttSyncService.isConnected()
         val hasConfig = CloudSettingsManager.hasConnectionConfig(this)
         val config = CloudSettingsManager.getConfig(this)
+        val isLocalOnly = UsageModeManager.isLocalOnly(this)
+
+        if (isLocalOnly) {
+            tvCloudConnectionStatus.text =
+                "云端状态：本地模式，云端入口已关闭。已保存的 MQTT 服务器、房间号（MQTT Topic）和加密密码会继续保留。"
+            btnConnectCloudSetting.text = "本地模式已关闭云端"
+            btnConnectCloudSetting.isEnabled = false
+            btnConnectCloudSetting.alpha = 0.6f
+            btnConnectCloudSetting.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#94A3B8"))
+            btnSaveCloudConfig.isEnabled = !isConnected
+            btnSaveCloudConfig.alpha = if (btnSaveCloudConfig.isEnabled) 1f else 0.6f
+            etMqttBrokerSetting.isEnabled = !isConnected
+            etMqttTopicSetting.isEnabled = !isConnected
+            etMqttPasswordSetting.isEnabled = !isConnected
+            switchAutoConnectSetting.isEnabled = false
+            switchAutoConnectSetting.alpha = 0.6f
+            switchAutoReconnectSetting.isEnabled = false
+            switchAutoReconnectSetting.alpha = 0.6f
+            return
+        }
 
         tvCloudConnectionStatus.text = when {
             isConnected -> "云端状态：已连接 ${config.topic}"
@@ -450,6 +820,10 @@ class SettingsActivity : AppCompatActivity() {
         etMqttBrokerSetting.isEnabled = !isConnected
         etMqttTopicSetting.isEnabled = !isConnected
         etMqttPasswordSetting.isEnabled = !isConnected
+        switchAutoConnectSetting.isEnabled = true
+        switchAutoConnectSetting.alpha = 1f
+        switchAutoReconnectSetting.isEnabled = true
+        switchAutoReconnectSetting.alpha = 1f
     }
 
     private fun showManualDisconnectDialog() {
@@ -509,6 +883,10 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnOpenRemoteQueueManager.setOnClickListener {
+            if (!UsageModeManager.canUseCloud(this)) {
+                Toast.makeText(this, "本地模式已关闭远程历史同步入口", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             startActivity(Intent(this, DeviceManagerActivity::class.java))
         }
 
@@ -541,6 +919,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun refreshSystemHistoryImportUi(resultMessage: String? = null) {
         val enabled = SystemSmsHistoryImporter.isEnabled(this)
+        val isLocalOnly = UsageModeManager.isLocalOnly(this)
         val localQueue = HistorySyncQueueManager.getLocalQueueSnapshot(this)
         val isRunning = currentHistoryState.isRunning
         val hasSnapshot = currentHistoryState.hasSnapshot() || localQueue.isActive()
@@ -561,6 +940,10 @@ class SettingsActivity : AppCompatActivity() {
         btnViewHistoryQueue.isEnabled = hasSnapshot
         btnViewHistoryQueue.alpha = if (hasSnapshot) 1f else 0.6f
         switchSystemHistoryImport.isEnabled = !isRunning
+        switchAllowRemoteHistorySync.isEnabled = !isLocalOnly
+        switchAllowRemoteHistorySync.alpha = if (switchAllowRemoteHistorySync.isEnabled) 1f else 0.6f
+        btnOpenRemoteQueueManager.isEnabled = !isLocalOnly
+        btnOpenRemoteQueueManager.alpha = if (btnOpenRemoteQueueManager.isEnabled) 1f else 0.6f
 
         if (isRunning || hasSnapshot) {
             tvSystemHistoryImportStatus.text = buildInlineHistoryStatus(resultMessage, localQueue)
@@ -576,6 +959,9 @@ class SettingsActivity : AppCompatActivity() {
             status.append(SystemSmsHistoryImporter.buildStatusText(this@SettingsActivity))
 
             if (refreshVersion == statusRefreshVersion) {
+                if (isLocalOnly) {
+                    status.append("\n\n本地模式已关闭远程历史同步入口；本机手动导入仍可继续使用。")
+                }
                 tvSystemHistoryImportStatus.text = status.toString()
             }
         }
@@ -974,6 +1360,12 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun broadcastDeviceProfileIfNeeded() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                DeviceDirectoryManager.saveLocalSnapshot(this@SettingsActivity)
+            }
+            return
+        }
         if (!MqttSyncService.isConnected()) {
             lifecycleScope.launch(Dispatchers.IO) {
                 DeviceDirectoryManager.saveLocalSnapshot(this@SettingsActivity)

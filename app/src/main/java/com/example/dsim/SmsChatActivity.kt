@@ -365,6 +365,10 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun sendCommand() {
+        if (!UsageModeManager.canUseCloud(this)) {
+            Toast.makeText(this, "本地模式已关闭云端发送", Toast.LENGTH_SHORT).show()
+            return
+        }
         val body = etSmsInput.text.toString()
         if (body.isBlank()) {
             Toast.makeText(this, "请先输入短信内容", Toast.LENGTH_SHORT).show()
@@ -445,6 +449,10 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun retrySend(sms: SmsMessage) {
+        if (!UsageModeManager.canUseCloud(this)) {
+            Toast.makeText(this, "本地模式已关闭云端重试发送", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (sms.uuid.isBlank()) {
             Toast.makeText(this, "这条短信缺少编号，不能重试", Toast.LENGTH_SHORT).show()
             return
