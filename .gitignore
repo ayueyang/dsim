@@ -55,3 +55,7 @@ google-services.json
 
 # 本地智能体工作数据
 /.workbuddy/
+
+# 测试回归产生的本地产物
+/tmp_dbpull/
+/tmp_uiauto/

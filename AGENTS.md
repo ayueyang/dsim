@@ -168,11 +168,15 @@ dSIM/
 ## 6. 当前待办（按优先级）
 
 1. **补齐默认短信应用的三个必备组件**（`ComposeSmsActivity` 目前直接 `finish()`、`HeadlessSmsSendService` 只有 `onBind`、`MmsReceiver` 空实现）。这是功能可用性的硬缺口——系统会因为这三个组件不合格而拒绝授予默认短信角色。
-2. **补测试**：加密 V1/V2 交叉兼容、历史队列状态迁移、隐私模式号码变体匹配、Room v1→v5 逐级迁移。目前有效覆盖率是 0。
-3. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前明文。迁移到 `EncryptedSharedPreferences`。
-4. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
-5. **清理死代码**：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`SendCmdPayload.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`。
-6. **文案与配色去硬编码**：中文字符串应进 `strings.xml`，界面色值应进 `colors.xml`（当前硬编码在 Kotlin 里）。
+2. **补测试**：加密 V1/V2 交叉兼容、历史队列状态迁移、隐私模式号码变体匹配、Room v1→v5 逐级迁移。这四块都是纯逻辑，**不依赖模拟器 modem**，用 `androidTest`/`test` 即可，是投入产出比最高的方向。
+3. **`mappingKey` 在 Root 模式下不含设备维度**：`mappingKey = ICCID_<iccid>`，而它又是 `sim_card_configs` 的主键。真实卡 ICCID 唯一所以平时不暴露，但模拟器各实例共用同一 ICCID 时两张卡会碰撞（已在多设备测试中实测到）。建议加入设备维度或补唯一性兜底。
+4. **`deviceId` 直接取自 `ANDROID_ID`**：Android 8+ 该值按应用签名作用域隔离，**debug 与 release 构建切换会让应用把自己当成新设备**，历史 `sms_message.deviceId` 与 `DeviceProfile.isLocalDevice` 判定会漂移。建议改为应用自管持久 UUID。
+5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
+6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前明文。迁移到 `EncryptedSharedPreferences`。
+7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
+8. **清理死代码**：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`SendCmdPayload.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`。
+9. **文案与配色去硬编码**：中文字符串应进 `strings.xml`（当前 `R.string.*` 使用次数为 0），界面色值应进 `colors.xml`。
+10. **自身回声日志级别**：客户端订阅的 topic 与发布 topic 相同且未用 MQTT no-local，自己发的 PING/PONG 会回环并落到「无 sms 载荷」分支打 WARNING，每 20 秒一条。行为正确但日志误导，建议提前静默返回。
 
 ---
 
@@ -189,8 +193,36 @@ dSIM/
 
 ---
 
-## 8. 调试入口
+## 8. 调试与测试入口
+
+### 8.1 应用内调试面板
 
 `MainActivity`（label「测试功能」，`exported=false`，只能从「设置 → 测试功能」进入）提供：硬件探测、注入模拟短信、全量历史导入、双库只读测试、SIM 管理、Root 探测/切换、清空私有库、通知测试、设备雷达。
 
-改完代码后，至少执行一次 `./gradlew :app:compileDebugKotlin`。
+注意：其中的「注入模拟短信」**直接 `dao.insertMessage` 后发 MQTT，绕过了 `SmsReceiver`**，
+因此它验证不了采集链路（互斥规则、号码标准化、来源解析、系统库回写都不经过）。要测采集链路请用真注入。
+
+### 8.2 模拟器回归流程（AI 可无人值守）
+
+```bash
+bash scripts/emu-up.sh 2                                        # 启动 2 台独立设备
+bash scripts/onboard-device.sh emulator-5554 dsim/test/x pw      # 装包+授权+走完引导
+bash scripts/onboard-device.sh emulator-5556 dsim/test/x pw      # 同一 topic/password
+bash scripts/verify-dsim.sh emulator-5554 emulator-5556          # 回归验证（12 项，退出码即结论）
+bash scripts/emu-down.sh                                         # 收工
+```
+
+| 脚本 | 作用 |
+|---|---|
+| `emu-up.sh N` / `emu-down.sh` | 启动 N 台 / 关闭全部并清锁 |
+| `uiauto.sh dump\|tap\|tapid\|type\|wait\|shot\|activities\|wake\|clearfield` | adb + uiautomator 的 UI 驱动 |
+| `onboard-device.sh <serial> <topic> [password]` | 无人值守完成 6 步引导 + 云端配置 + SIM 绑定 |
+| `pull-app-db.sh <serial>` | 拉取应用数据库（自动带上 `-wal`/`-shm`，否则只有 4 KB 空头文件） |
+| `verify-dsim.sh <serial> [peer]` | 回归验证：采集链路 / 落库 / 通知 / 前台服务 / 跨设备发现 |
+
+**完整说明、前置自检与已知限制见 `TESTING.md`。** 启动模拟器前务必先读它的 §0.1
+（宿主出站 IPv6 必须可用，否则 modem 挂不上、SIM 不激活）。
+
+### 8.3 改完代码后
+
+至少执行一次 `./gradlew :app:compileDebugKotlin`；涉及采集/同步逻辑时再跑一遍 `verify-dsim.sh`。
