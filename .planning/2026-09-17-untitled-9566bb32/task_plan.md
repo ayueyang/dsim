@@ -34,8 +34,9 @@
 - [x] 验证通知：`dsim_loud_v1` 渠道、importance=4、震动模式正确、带 1 个动作
 - [x] 验证非默认短信应用分支：移除默认短信角色后由 `SMS_RECEIVED` 捕获
       → **双接收器动作互斥规则实证通过**
-- [ ] 验证去重（同一条短信重复注入不产生重复记录）
-- **Status:** in_progress（主链路已完成）
+- [x] **验证跨设备去重**：A 发信产生的 uuid 在两端各只有 1 条记录 ——
+      B 把发出的短信广播到云端、A 收到后由 `checkUuidExists` 正确拦截，未产生重复
+- **Status:** complete
 
 ### Phase 4: 双开与多设备
 - [x] 创建第二个独立 AVD（`dSIM_B` / `dSIM_C`，同镜像、独立 userdata → 独立 `ANDROID_ID`）
