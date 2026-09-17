@@ -1,12 +1,10 @@
 package com.example.dsim
 
 import android.util.Base64
-import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -14,28 +12,21 @@ import javax.crypto.spec.SecretKeySpec
  *
  * ## 线上格式
  *
- * V2（当前写入格式，认证加密）：
  * ```
  * [4B 魔数 "DSM2"][16B 随机盐][12B GCM IV][密文][16B GCM 认证标签]
  * 密钥 = PBKDF2-HMAC-SHA256(口令, 盐, PBKDF2_ROUNDS 轮, 256 bit)
  * ```
+ *
+ * AES-256-GCM（认证加密），GCM 标签保证完整性，篡改会直接解密失败。
  * 盐与 IV 每条报文重新随机生成并随报文传输，因此各端只需共享口令即可互解。
  *
- * V1（历史格式，仅保留读取能力）：
- * ```
- * [16B IV][AES/CBC/PKCS5Padding 密文]
- * 密钥 = SHA-256(口令)
- * ```
- * V1 没有完整性校验，密钥也只做单轮哈希。**不得用于新数据**，仅用于平滑升级
- * 期间读取尚未升级的对端发来的报文。
+ * ## 改格式时的规矩
  *
- * ## 升级注意事项
- *
- * 写入一律使用 V2，读取同时支持 V1 / V2。因此升级期间：
- * - 新版本可以正常读取旧版本发来的报文；
- * - 旧版本**无法**读取新版本发来的报文，会解密失败并丢弃。
- *
- * 结论：所有已配对设备应一并升级，否则会出现单向消息丢失。
+ * 格式版本靠 **魔数** 识别（不用单字节版本号：报文开头是随机数据，单字节有 1/256 概率误判）。
+ * 今后若要改格式：
+ * 1. 换一个新魔数；
+ * 2. **只有当线上真的存在跑旧格式的设备时**，才保留旧格式的读取分支
+ *    （本项目当前无发布、无用户，任何"旧格式兼容"都是死代码，不要预先加）。
  *
  * ## 为什么自行实现 PBKDF2
  *
@@ -62,12 +53,9 @@ object DsimCryptoUtils {
 
     /**
      * PBKDF2 迭代轮数。取值在"抗离线爆破"与"单次加解密耗时"之间折中：
-     * 中端机上单次派生约 0.2~0.5 秒，而设备快照心跳周期为 30 秒，占空比可忽略。
+     * 中端机上单次派生约 0.2~0.5 秒，而设备快照心跳周期为 20 秒，占空比可忽略。
      */
     private const val PBKDF2_ROUNDS = 120_000
-
-    private const val LEGACY_TRANSFORMATION = "AES/CBC/PKCS5Padding"
-    private const val LEGACY_IV_SIZE = 16
 
     private val magicBytes = AEAD_MAGIC.toByteArray(Charsets.US_ASCII)
     private val secureRandom = SecureRandom()
@@ -98,7 +86,7 @@ object DsimCryptoUtils {
     }
 
     /**
-     * 解密载荷，自动识别 V2 / V1 两种格式。
+     * 解密载荷。
      *
      * @return 明文；Base64 非法、格式残缺、口令不符或完整性校验失败时返回 `null`。
      */
@@ -110,36 +98,16 @@ object DsimCryptoUtils {
             return null
         }
 
-        if (combined.size < LEGACY_IV_SIZE) {
-            return null
-        }
-
-        return if (isAeadEnvelope(combined)) {
-            decryptAead(combined, secret)
-        } else {
-            decryptLegacy(combined, secret)
-        }
-    }
-
-    /**
-     * 判断是否为 V2 报文。只看魔数，不做认证。
-     *
-     * V1 报文的开头是随机 IV，理论上可能恰好等于魔数（概率 2^-32），
-     * 此时会被误判并导致该条报文解密失败——概率可接受，不做额外兜底。
-     */
-    private fun isAeadEnvelope(combined: ByteArray): Boolean {
+        // 头部 = 魔数(4) + 盐(16) + IV(12)，之后至少还要有一段密文
         if (combined.size <= AEAD_HEADER_SIZE) {
-            return false
+            return null
         }
         for (index in magicBytes.indices) {
             if (combined[index] != magicBytes[index]) {
-                return false
+                return null   // 魔数不符：不是本应用发出的报文
             }
         }
-        return true
-    }
 
-    private fun decryptAead(combined: ByteArray, secret: String): String? {
         return try {
             val salt = combined.copyOfRange(magicBytes.size, magicBytes.size + AEAD_SALT_SIZE)
             val iv = combined.copyOfRange(magicBytes.size + AEAD_SALT_SIZE, AEAD_HEADER_SIZE)
@@ -150,35 +118,6 @@ object DsimCryptoUtils {
             cipher.init(Cipher.DECRYPT_MODE, keySpec, GCMParameterSpec(AEAD_TAG_BITS, iv))
 
             String(cipher.doFinal(sealed), Charsets.UTF_8)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    /**
-     * 读取 V1 历史报文，密钥派生为 `SHA-256(口令)`。
-     *
-     * 旧实现里还有一步 `topic.padEnd(KEY_SIZE, 'd')`，但 SHA-256 的输出长度恒为
-     * 32 字节、与输入长度无关，该补位对结果没有任何影响，属于无副作用的死代码。
-     * 这里直接省略，派生结果与旧实现逐位一致，因此仍能解开历史报文。
-     */
-    private fun decryptLegacy(combined: ByteArray, secret: String): String? {
-        return try {
-            val iv = combined.copyOfRange(0, LEGACY_IV_SIZE)
-            val body = combined.copyOfRange(LEGACY_IV_SIZE, combined.size)
-
-            val digest = MessageDigest.getInstance("SHA-256")
-            val keyBytes = digest.digest(secret.toByteArray(Charsets.UTF_8))
-
-            val cipher = Cipher.getInstance(LEGACY_TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                SecretKeySpec(keyBytes, KEY_ALGORITHM),
-                IvParameterSpec(iv)
-            )
-
-            String(cipher.doFinal(body), Charsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
             null
