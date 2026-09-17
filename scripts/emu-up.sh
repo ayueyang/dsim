@@ -47,6 +47,13 @@ AVDS=(dSIM_B dSIM_C dSIM_D dSIM_E)
 PORTS=(5554 5556 5558 5560)
 PHONES=(13800138001 13800138002 13800138003 13800138004)
 
+# ★ 关键：必须给每台设备**不同的 ICCID**。
+# 模拟器默认所有实例共用同一个 ICCID，而 dSIM 在 Root 模式下 mappingKey = ICCID_<iccid>，
+# 它又是 sim_card_configs 的主键 → 两端的卡会被认为是同一张，对端卡的 REMOTE_SHADOW
+# 配置不会被创建，跨设备发信无法触发。（详见 TESTING.md §5.1）
+# 这里为每个实例指定不同的 ICC profile，从根上解决，无需改动应用代码。
+ICC_PROFILES=(sim_a.xml sim_b.xml sim_c.xml sim_d.xml)
+
 COUNT="${1:-2}"
 
 if [ ! -x "$EMULATOR" ]; then
@@ -55,30 +62,42 @@ if [ ! -x "$EMULATOR" ]; then
 fi
 
 if [ "$COUNT" -gt "${#AVDS[@]}" ]; then
-  echo "最多支持 ${#AVDS[@]} 台，需要更多请先创建对应 AVD。" >&2
+  echo "最多支持 ${#AVDS[@]} 台，需要更多请先创建对应 AVD（并补 ICC profile）。" >&2
   exit 1
 fi
+
+# 脚本内关掉了 MSYS 路径改写，模拟器是原生程序，因此要显式转成 Windows 路径
+ICC_DIR_POSIX="$(cd "$(dirname "$0")/.." && pwd)/test-fixtures/icc"
+ICC_DIR_WIN="$(cygpath -w "$ICC_DIR_POSIX" 2>/dev/null || echo "$ICC_DIR_POSIX")"
+LOG_DIR="$(cd "$(dirname "$0")/.." && pwd)/tmp_emulogs"
+mkdir -p "$LOG_DIR"
 
 echo "启动 $COUNT 台设备…"
 for ((i = 0; i < COUNT; i++)); do
   avd="${AVDS[$i]}"
   port="${PORTS[$i]}"
   phone="${PHONES[$i]}"
+  profile="$ICC_DIR_WIN\\${ICC_PROFILES[$i]}"
 
   if [ ! -d "$HOME/.android/avd/$avd.avd" ]; then
     echo "  [跳过] AVD 不存在：$avd" >&2
+    continue
+  fi
+  if [ ! -f "$ICC_DIR_POSIX/${ICC_PROFILES[$i]}" ]; then
+    echo "  [跳过] ICC profile 不存在：${ICC_PROFILES[$i]}" >&2
     continue
   fi
 
   # 清理上次异常退出留下的锁，否则会报 multi-instance 错误
   rm -f "$HOME/.android/avd/$avd.avd/"*.lock 2>/dev/null
 
-  echo "  $avd  port=$port  number=$phone"
+  echo "  $avd  port=$port  number=$phone  icc=${ICC_PROFILES[$i]}"
   nohup "$EMULATOR" -avd "$avd" \
     -no-window -no-audio -no-boot-anim -no-snapshot \
     -gpu swiftshader_indirect -feature -Vulkan \
     -port "$port" -phone-number "$phone" \
-    > "/tmp/emu-$avd.log" 2>&1 &
+    -icc-profile "$profile" \
+    > "$LOG_DIR/$avd.log" 2>&1 &
 done
 
 echo

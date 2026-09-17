@@ -34,11 +34,28 @@ if ! "$ADB" -s "$SERIAL" shell pm list packages 2>/dev/null | grep -q "$PACKAGE"
 fi
 
 echo "拉取 $SERIAL 的应用数据库 → $OUT"
+
+# ★ 必须先在**设备侧**把三件套一次拷走，再逐份拉回来。
+#
+# 为什么：Room 默认 WAL 模式，数据在 `-wal` 里。如果 `db`、`db-wal`、`db-shm` 分三次
+# 从设备上 cat 下来，而这中间应用又写了一次（dSIM 每 20 秒广播快照、每次都会更新
+# `device_profiles`），拿到的三份就是不同时刻的快照 —— 组合起来会读到**过时的数据**，
+# 而且不报任何错。实测中它让我一度误判"配置没生效"。
+STAGE="/data/data/$PACKAGE/databases/_pull_stage"
+"$ADB" -s "$SERIAL" shell \
+  "run-as $PACKAGE sh -c 'rm -rf $STAGE; mkdir -p $STAGE; \
+   cp -f /data/data/$PACKAGE/databases/$DBNAME     $STAGE/ 2>/dev/null; \
+   cp -f /data/data/$PACKAGE/databases/$DBNAME-wal $STAGE/ 2>/dev/null; \
+   cp -f /data/data/$PACKAGE/databases/$DBNAME-shm $STAGE/ 2>/dev/null'" \
+  >/dev/null 2>&1
+
 for suffix in "" "-wal" "-shm"; do
-  "$ADB" -s "$SERIAL" exec-out \
-    "run-as $PACKAGE cat /data/data/$PACKAGE/databases/$DBNAME$suffix" \
+  "$ADB" -s "$SERIAL" exec-out "run-as $PACKAGE cat $STAGE/$DBNAME$suffix" \
     > "$OUT/$DBNAME$suffix" 2>/dev/null
 done
+
+# 清理设备侧的临时副本
+"$ADB" -s "$SERIAL" shell "run-as $PACKAGE rm -rf $STAGE" >/dev/null 2>&1
 
 for suffix in "" "-wal" "-shm"; do
   f="$OUT/$DBNAME$suffix"

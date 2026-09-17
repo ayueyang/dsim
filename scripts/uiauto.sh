@@ -72,6 +72,34 @@ hide_keyboard() {
   fi
 }
 
+# ★ 自动消掉系统 ANR 弹窗（"System UI isn't responding" / "... isn't responding"）。
+#
+# 为什么必须有：模拟器跑软件渲染、又同时开多个实例时，SystemUI 常会 ANR。
+# 该弹窗是**系统级模态**，会盖住应用界面 —— 此时所有 tap 都会落到弹窗按钮上，
+# 应用侧的点击全部静默失效。实测中它曾让整个引导流程"跑完但什么都没生效"，
+# 而脚本输出完全正常，极难排查。
+#
+# 处理策略：点 "Wait"（而不是 "Close app"）——前者只是继续等待，不会杀掉应用。
+dismiss_anr() {
+  local serial="$1" anr_xml="$2" anr_tries="${3:-2}"
+  local n=0
+  local anr_win
+  anr_win="$(cygpath -w "$anr_xml" 2>/dev/null || echo "$anr_xml")"
+  while [ "$n" -lt "$anr_tries" ]; do
+    "$ADB" -s "$serial" shell uiautomator dump /sdcard/_anr.xml >/dev/null 2>&1
+    "$ADB" -s "$serial" exec-out cat /sdcard/_anr.xml > "$anr_xml" 2>/dev/null
+    grep -q 'aerr_wait' "$anr_xml" 2>/dev/null || return 0
+    local anr_xy
+    anr_xy="$(find_center "$anr_win" 'aerr_wait' rid)" || return 0
+    [ -n "$anr_xy" ] || return 0
+    "$ADB" -s "$serial" shell input tap $anr_xy >/dev/null 2>&1
+    echo "  (已关闭系统 ANR 弹窗)"
+    sleep 3
+    n=$((n + 1))
+  done
+  return 0
+}
+
 # 清空当前聚焦的输入框：光标移到末尾后连按退格
 clear_focused_field() {
   local serial="$1" times="${2:-40}"
@@ -146,6 +174,7 @@ case "$cmd" in
     ;;
 
   dump)
+    dismiss_anr "$serial" "$WORK/anr_${serial}.xml" 1
     out="$(xml_posix "$serial")"
     for _ in 1 2 3; do
       dump_xml "$serial" "$out"
@@ -157,6 +186,7 @@ case "$cmd" in
     ;;
 
   tap)
+    dismiss_anr "$serial" "$WORK/anr_${serial}.xml" 1
     hide_keyboard "$serial"
     out="$(xml_posix "$serial")"; dump_xml "$serial" "$out"
     coords="$(find_center "$(xml_win "$serial")" "$3" text)" || { echo "未找到文本: $3" >&2; exit 1; }
@@ -165,6 +195,7 @@ case "$cmd" in
     ;;
 
   tapid)
+    dismiss_anr "$serial" "$WORK/anr_${serial}.xml" 1
     hide_keyboard "$serial"
     out="$(xml_posix "$serial")"; dump_xml "$serial" "$out"
     coords="$(find_center "$(xml_win "$serial")" "$3" rid)" || { echo "未找到 resource-id 含: $3" >&2; exit 1; }
@@ -186,6 +217,7 @@ case "$cmd" in
     ;;
 
   wait)
+    dismiss_anr "$serial" "$WORK/anr_${serial}.xml" 1
     needle="$3"; limit="${4:-20}"; i=0
     while [ "$i" -lt "$limit" ]; do
       out="$(xml_posix "$serial")"; dump_xml "$serial" "$out"

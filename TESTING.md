@@ -187,17 +187,12 @@ adb -s emulator-5554 logcat -d | grep dSIM_SyncService | tail -3
 
 ## 5. 已知限制与对应处置
 
-### 5.1 ✅ 模拟器各实例共用同一 ICCID —— 绕法已实测跑通
+### 5.1 ✅ 模拟器各实例共用同一 ICCID —— 已用 ICC Profile 根治（实测）
 
-实测：两台模拟器报告的 ICCID 都是 `89860318640220133897`。而应用在 Root 模式下
-`mappingKey = ICCID_<iccid>`（**不含 deviceId**），于是两端的 key 完全相同：
+**现象**：两台模拟器报告的 ICCID 都是 `89860318640220133897`。而应用在 Root 模式下
+`mappingKey = ICCID_<iccid>`（**不含 deviceId**），于是两端的 key 完全相同。
 
-```
-设备 A: key=ICCID_89860318640220133897  phone=+13800138001 deviceId=d9e0118b7d57f7c6
-设备 B: key=ICCID_89860318640220133897  phone=+13800138002 deviceId=96fad9a2276863b0
-```
-
-后果：A 收到 B 的快照后**不会创建远端影子卡**。原因在 `MqttSyncService.kt:989-992`：
+**后果**：A 收到 B 的快照后**不会创建远端影子卡**。原因在 `MqttSyncService.kt:989-992`：
 
 ```kotlin
 val existingConfig = dao.getSimConfigByKey(mappingKey)
@@ -209,51 +204,59 @@ if (existingConfig != null && existingConfig.bindMode != "REMOTE_SHADOW") {
 A 用同一个 key 查到了**自己的** `ROOT_ICCID` 配置，于是 `continue`。
 没有影子卡，会话里就选不到"用对端的卡发信"，SEND_CMD 无法触发。
 
-**这不是应用缺陷**——真实物理卡的 ICCID 全球唯一。但它暴露了一个设计前提：
+这不是应用缺陷——真实物理卡的 ICCID 全球唯一。但它暴露了一个设计前提：
 `mappingKey` 在 Root 模式下不含设备维度，而它又是 `sim_card_configs` 的主键，没有唯一性兜底。
 
-#### 绕法（已实测有效，只需改一台设备）
+#### 根治方案：给每台模拟器不同的 ICC Profile（已实测）
 
-让**其中一台**改用无 Root 模式，键就变成设备作用域的 `DEV_<deviceId>_SUBID_1`，两端不再碰撞。
+模拟器的 SIM 内容是一份**明文 XML**，就在系统镜像目录里（不在镜像内部）：
 
-1. 在该设备上：收件箱 → **设置** → **测试功能**（`btnOpenTestTools`）
-2. 滚动到底部，点 **「关闭 Root 探测（开启无 Root 测试）」**（`btnToggleRootMock`）。
-   按钮文案变为「恢复 Root 探测 (结束测试)」即表示开关已生效
-3. 返回设置 → **SIM 绑定管理**（`btnManageSimSetting`）→ 点「解绑」并在确认弹窗点「解绑」
-4. 点「探测并绑定本机 SIM」——弹窗标题应显示 **「免 Root / 设备卡槽模式」**（原来是「Root / ICCID 模式」）
-5. 点「保存绑定」
-
-验证（B 侧应出现两条配置，新键为 `NOROOT_DEVICE`）：
-
-```bash
-bash scripts/pull-app-db.sh emulator-5556
-python -c "
-import sqlite3
-c=sqlite3.connect('tmp_dbpull/emulator-5556/dsim_core_database')
-for r in c.execute('SELECT mappingKey,bindMode,isActive,deviceId,subscriptionId FROM sim_card_configs'): print(r)
-"
-# ICCID_89860318640220133897    ROOT_ICCID     0  ...
-# DEV_96fad9a2276863b0_SUBID_1  NOROOT_DEVICE  1  ...
+```
+$ANDROID_SDK_ROOT/system-images/<镜像>/data/misc/modem_simulator/iccprofile_for_sim0.xml
 ```
 
-等一个快照周期后，A 侧应出现 `REMOTE_SHADOW` 条目（此为端到端成功的分水岭）：
+其中 `<EF_ICCID>` 节点下的 `<CCID>89860318640220133897</CCID>` 就是 ICCID。
+把它替换成不同的值、再用 `-icc-profile <文件>` 启动即可。
 
-```bash
-bash scripts/pull-app-db.sh emulator-5554   # 等 20s 后再拉
-# ICCID_89860318640220133897    ROOT_ICCID      1  d9e0118b7d57f7c6   ← A 自己的卡
-# DEV_96fad9a2276863b0_SUBID_1  REMOTE_SHADOW   1  96fad9a2276863b0   ← B 的卡 ← ★
+`test-fixtures/icc/` 下已备好 4 份（ICCID 末位为 Luhn 校验位，均已重算并通过校验）：
+
+| 文件 | ICCID |
+|---|---|
+| `sim_a.xml` | 89860318640220133814 |
+| `sim_b.xml` | 89860318640220133822 |
+| `sim_c.xml` | 89860318640220133830 |
+| `sim_d.xml` | 89860318640220133848 |
+
+`scripts/emu-up.sh` 已按实例顺序自动传入，**无需手工干预**。
+
+实测效果（`pm clear` 后从零配置）：
+
+```
+设备 A: mappingKey=ICCID_89860318640220133814   (本机)
+设备 B: mappingKey=ICCID_89860318640220133822   (本机)
+A 的 sim_card_configs:  ICCID_...814 (ROOT_ICCID) + ICCID_...822 (REMOTE_SHADOW ← B 的卡)
+B 的 sim_card_configs:  ICCID_...822 (ROOT_ICCID) + ICCID_...814 (REMOTE_SHADOW ← A 的卡)
 ```
 
-**注意 `isMockNoRootMode` 不持久化**（`HardwareProbeUtils` 里 `object` 的普通 `var`），
-进程重启即失效。做这一串操作期间不要 `am force-stop` 该应用。
+**注意**：系统镜像升级后应**基于新镜像的 `iccprofile_for_sim0.xml` 重新生成**这几个文件
+（EF_DIR 的运营商列表、各 EF 的 SIMIO 响应都可能变），不要继续用这里的旧副本。
 
-另一个未验证的方向：模拟器支持 `-icc-profile <file>` 指定 ICC 配置，若能给不同实例配置不同
-ICCID，即可从根上解决（无需切模式）。本次未找到该文件的格式样例
-（`emulator -help-all` 只说明"ICC configuration file for SIM card"，SDK 里也无样例文件）。
+#### 备选方案：无 Root 模式（已实测，但绕法不持久）
+
+让**其中一台**切到无 Root 模式，键就变成设备作用域的 `DEV_<deviceId>_SUBID_1`：
+
+1. 收件箱 → 设置 → 测试功能（`btnOpenTestTools`）→ 滚动到底点
+   **「关闭 Root 探测（开启无 Root 测试）」**（`btnToggleRootMock`）
+2. 设置 → **SIM 绑定管理** → 解绑（确认弹窗里再点一次「解绑」）→ 重新探测并保存
+3. 弹窗标题应显示「免 Root / 设备卡槽模式」
+
+**注意 `isMockNoRootMode` 是 `HardwareProbeUtils` 里 `object` 的普通 `var`，不持久化**，
+进程重启即失效。做这一串操作期间不要 `am force-stop` 该应用。若要多设备长期联调，
+建议走上面的 ICC Profile 方案，或把该开关落盘。
 
 ### 5.2 跨设备发信（SEND_CMD）验证 —— 已实测跑通
 
-前置：完成 §5.1 的绕法，A 侧已出现 `REMOTE_SHADOW` 配置。
+前置：§5.1 已生效（两端 mappingKey 不同，A 侧出现对端卡的 `REMOTE_SHADOW` 配置）。
 
 1. 在 A 上打开任一会话（收件箱点某条会话）
 2. 点左下角的发件卡按钮（`btnSelectSim`，当前显示如「本机 卡1」）
@@ -266,12 +269,12 @@ ICCID，即可从根上解决（无需切模式）。本次未找到该文件的
 ```bash
 # 执行端（B）
 adb -s emulator-5556 logcat -d | grep dSIM_SyncService | tail -3
-# D dSIM_SyncService: 执行 SEND_CMD：mappingKey=DEV_..., subId=1, target=10086
-# D dSIM_SyncService: 已发送加密短信到云端: 10086
+# D dSIM_SyncService: 执行 SEND_CMD：mappingKey=ICCID_..., subId=2, target=10010
+# D dSIM_SyncService: 已发送加密短信到云端: 10010
 
 # 发起端（A）会看到自己发出的指令回声，正确行为是忽略
 adb -s emulator-5554 logcat -d | grep dSIM_SyncService | tail -3
-# D dSIM_SyncService: 收到非本机目标发信指令，忽略: DEV_...
+# D dSIM_SyncService: 收到非本机目标发信指令，忽略: ICCID_...
 ```
 
 期望落库（**两端 status 均应为 1，且 uuid 相同** —— 对应 AGENTS.md 的 C10 约束）：
@@ -279,19 +282,24 @@ adb -s emulator-5554 logcat -d | grep dSIM_SyncService | tail -3
 ```bash
 bash scripts/pull-app-db.sh emulator-5554 && bash scripts/pull-app-db.sh emulator-5556
 python -c "
-import sqlite3
-for tag,ser in (('A','emulator-5554'),('B','emulator-5556')):
-    c=sqlite3.connect('tmp_dbpull/%s/dsim_core_database'%ser)
+import os, sqlite3
+base=os.path.abspath('tmp_dbpull')
+for tag in ('A','B'):
+    c=sqlite3.connect(os.path.join(base,tag,'dsim_core_database'))
     print(tag, c.execute('SELECT uuid,body,type,status,mappingKey FROM sms_messages WHERE type=2 ORDER BY id DESC LIMIT 1').fetchone())
 "
-# A ('2d05ed3b-...', 'Hello', 2, 1, 'DEV_96fad9a2276863b0_SUBID_1')
-# B ('2d05ed3b-...', 'Hello', 2, 1, 'DEV_96fad9a2276863b0_SUBID_1')
+# A ('15c887b7-...', 'Hello from A via B SIM', 2, 1, 'ICCID_89860318640220133822')
+# B ('15c887b7-...', 'Hello from A via B SIM', 2, 1, 'ICCID_89860318640220133822')
 ```
 
 实测结论：A 落库 `status=0` → 发 `SEND_CMD` → B 用自己 SIM 实际发出并复用同一 uuid 落库
 `status=1` → 回 `SEND_CMD_RESULT(success)` → A 更新为 `status=1`。全链路与幂等设计均正确。
+**且两端 `mappingKey` 都是真实的 `ICCID_` 键**（走的是正常 Root 模式，无任何绕法）。
 
 ### 5.3 官方 AVD 只有单卡
+
+ 中没有任何多 SIM 开关（只有 `-no-sim`）。多卡场景只能靠多设备覆盖。
+（注：配合 §5.1 的 ICC Profile，可以做到每台设备一张不同的卡，已足够覆盖本项目的跨设备场景。）
 
 `emulator -help-all` 中没有任何多 SIM 开关（只有 `-no-sim`）。多卡场景只能靠多设备覆盖。
 
