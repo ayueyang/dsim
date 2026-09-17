@@ -23,6 +23,8 @@
 #    所以：shell 重定向用 `$WORK`（POSIX），传给 Python 的一律用 cygpath 转出的 `$WORK_WIN`。
 #
 # 3. `input text` **不支持中文**，只接受 ASCII。中文文案只能用 tap/wait 匹配。
+#    而且**空格会被当参数分隔符**——传 "Hello World" 只会输入 "Hello"，必须转义成 `Hello%sworld`
+#    （`type` 命令已自动处理）。
 #
 # 4. `uiautomator dump` 偶尔返回空树（0 个 node）。先 wake 再 dump；
 #    若仍为空，相隔几秒重试。本机实测有该现象，不要误判成"界面没有元素"。
@@ -171,7 +173,10 @@ case "$cmd" in
     ;;
 
   type)
-    "$ADB" -s "$serial" shell input text "$3"
+    # ⚠️ `input text` 把空格当参数分隔符，直接传 "Hello World" 只会输入 "Hello"。
+    # 必须把空格转义成 %s（adb input 的约定）。本机实测确认。
+    escaped="${3// /%s}"
+    "$ADB" -s "$serial" shell input text "$escaped"
     echo "typed: $3"
     ;;
 

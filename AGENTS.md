@@ -169,7 +169,7 @@ dSIM/
 
 1. **补齐默认短信应用的三个必备组件**（`ComposeSmsActivity` 目前直接 `finish()`、`HeadlessSmsSendService` 只有 `onBind`、`MmsReceiver` 空实现）。这是功能可用性的硬缺口——系统会因为这三个组件不合格而拒绝授予默认短信角色。
 2. **补测试**：加密 V1/V2 交叉兼容、历史队列状态迁移、隐私模式号码变体匹配、Room v1→v5 逐级迁移。这四块都是纯逻辑，**不依赖模拟器 modem**，用 `androidTest`/`test` 即可，是投入产出比最高的方向。
-3. **`mappingKey` 在 Root 模式下不含设备维度**：`mappingKey = ICCID_<iccid>`，而它又是 `sim_card_configs` 的主键。真实卡 ICCID 唯一所以平时不暴露，但模拟器各实例共用同一 ICCID 时两张卡会碰撞（已在多设备测试中实测到）。建议加入设备维度或补唯一性兜底。
+3. **`mappingKey` 在 Root 模式下不含设备维度**：`mappingKey = ICCID_<iccid>`，而它又是 `sim_card_configs` 的主键。真实卡 ICCID 唯一所以平时不暴露，但模拟器各实例共用同一 ICCID 时两张卡会碰撞，导致对端卡的 `REMOTE_SHADOW` 不被创建、跨设备发信无法触发。**已在多设备测试中实测到，绕法（让其中一台切无 Root 模式）也已实测跑通，见 `TESTING.md` §5.1。** 建议在键里加入设备维度或补唯一性兜底。
 4. **`deviceId` 直接取自 `ANDROID_ID`**：Android 8+ 该值按应用签名作用域隔离，**debug 与 release 构建切换会让应用把自己当成新设备**，历史 `sms_message.deviceId` 与 `DeviceProfile.isLocalDevice` 判定会漂移。建议改为应用自管持久 UUID。
 5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
 6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前明文。迁移到 `EncryptedSharedPreferences`。

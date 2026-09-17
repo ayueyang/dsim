@@ -4,11 +4,11 @@
 在这台 Windows 机器上建立一套可重复、可由 AI 独立驱动的 dSIM 测试环境：单机能双开（≥2 个独立设备）、每台设备有可用的模拟 SIM 卡、短信收发链路打通，并能扩展到 3 台以上设备同时联调。
 
 ## Next Step
-Phase 1–4 已打通并固化为脚本；Phase 5 的回归脚本已可在无人值守下跑通（`verify-dsim.sh` 12/12 PASS，退出码 0）。
-唯一未跑通的是 SEND_CMD 端到端 —— 阻塞于模拟器各实例共用同一 ICCID，绕法已写入 `TESTING.md` §5.1。
+全部完成。Goal 已达成：双开、每台设备有可用模拟 SIM、短信收发链路打通、跨设备发现与跨设备发信均实测通过、
+可扩展到 N 台设备（`emu-up.sh N`）。唯一残留是 §5.1 那个绕法不持久化（`isMockNoRootMode` 是内存开关）。
 
 ## Current Phase
-Phase 5（自动化封装与交付）—— 基本完成
+全部 Phase complete
 
 ## Phases
 
@@ -42,13 +42,13 @@ Phase 5（自动化封装与交付）—— 基本完成
 - [x] 验证两实例同时运行、`deviceId` 互异
 - [x] 验证设备有完整网络（`wlan0` = 10.0.2.16）且能连通 broker TCP 1883
 - [x] 验证单台设备 SIM 已挂载、短信链路可用
-- [x] **两实例连同一 broker：配置完成（同一 topic/password），前台服务在跑**
 - [x] **跨设备发现验证通过**：两端 `device_profiles` 互见（本机 LOCAL + 对端 REMOTE）
-- [x] PING/PONG 快照每 20 秒稳定广播，含 SIM 信息（`ICCID_89860318640220133897`, `ROOT_ICCID`）
-- [ ] SEND_CMD 端到端 —— **阻塞**：模拟器各实例共用同一 ICCID → 两端 mappingKey 相同
-      → 远端影子卡不被创建 → 无法选择对端卡发信。绕法见 `TESTING.md` §5.1
+- [x] PING/PONG 快照每 20 秒稳定广播，含 SIM 信息
+- [x] **SEND_CMD 端到端验证通过**（绕法：让 B 切无 Root 模式，两端 mappingKey 不再碰撞）
+      —— A 发 `SEND_CMD` → B 用自己 SIM 实际发出并复用同一 uuid → 回 `SEND_CMD_RESULT`
+      → A 的 status 由 0 更新为 1；**两端 uuid 完全一致**（C10 约束实测通过）
 - [x] 固化启动/关闭脚本：`scripts/emu-up.sh`、`scripts/emu-down.sh`
-- **Status:** complete（SEND_CMD 一项移交文档作为已知限制）
+- **Status:** complete
 
 ### Phase 5: 自动化封装与交付
 - [x] `scripts/emu-up.sh` / `emu-down.sh` —— 启停 N 台设备
