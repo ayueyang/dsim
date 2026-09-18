@@ -74,6 +74,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvCloudConnectionStatus: TextView
     private lateinit var switchAutoConnectSetting: Switch
     private lateinit var switchAutoReconnectSetting: Switch
+    private lateinit var switchRemoteSendAllowed: Switch
+    private lateinit var etRemoteSendDailyLimit: EditText
+    private lateinit var tvRemoteSendUsage: TextView
     private lateinit var switchSystemHistoryImport: Switch
     private lateinit var switchAllowRemoteHistorySync: Switch
     private lateinit var btnImportSystemHistory: Button
@@ -141,6 +144,9 @@ class SettingsActivity : AppCompatActivity() {
         tvCloudConnectionStatus = findViewById(R.id.tvCloudConnectionStatus)
         switchAutoConnectSetting = findViewById(R.id.switchAutoConnectSetting)
         switchAutoReconnectSetting = findViewById(R.id.switchAutoReconnectSetting)
+        switchRemoteSendAllowed = findViewById(R.id.switchRemoteSendAllowed)
+        etRemoteSendDailyLimit = findViewById(R.id.etRemoteSendDailyLimit)
+        tvRemoteSendUsage = findViewById(R.id.tvRemoteSendUsage)
         switchSystemHistoryImport = findViewById(R.id.switchSystemHistoryImport)
         switchAllowRemoteHistorySync = findViewById(R.id.switchAllowRemoteHistorySync)
         btnImportSystemHistory = findViewById(R.id.btnImportSystemHistory)
@@ -743,6 +749,52 @@ class SettingsActivity : AppCompatActivity() {
                 if (isChecked) "已开启断线自动重连" else "已关闭断线自动重连",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+
+        setupSendCostGuardUi()
+    }
+
+    private fun setupSendCostGuardUi() {
+        switchRemoteSendAllowed.isChecked = CloudSettingsManager.isRemoteSendAllowed(this)
+        etRemoteSendDailyLimit.setText(CloudSettingsManager.getRemoteSendDailyLimit(this).toString())
+        refreshRemoteSendUsage()
+
+        switchRemoteSendAllowed.setOnCheckedChangeListener { _, isChecked ->
+            CloudSettingsManager.setRemoteSendAllowed(this, isChecked)
+            Toast.makeText(
+                this,
+                if (isChecked) "已允许其他设备通过本机发短信" else "已拒绝其他设备通过本机发短信",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        val commitLimit = {
+            val limit = SendCostPolicy.sanitizeLimit(etRemoteSendDailyLimit.text?.toString())
+            CloudSettingsManager.setRemoteSendDailyLimit(this, limit)
+            if (etRemoteSendDailyLimit.text?.toString() != limit.toString()) {
+                etRemoteSendDailyLimit.setText(limit.toString())
+            }
+            refreshRemoteSendUsage()
+        }
+        etRemoteSendDailyLimit.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitLimit() }
+        etRemoteSendDailyLimit.setOnEditorActionListener { v, _, _ ->
+            commitLimit()
+            v.clearFocus()
+            false
+        }
+    }
+
+    private fun refreshRemoteSendUsage() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val since = SendCostPolicy.startOfDay(System.currentTimeMillis())
+            val used = DsimDatabase.getDatabase(this@SettingsActivity).dsimDao().sumSendSegmentsSince(since)
+            val limit = CloudSettingsManager.getRemoteSendDailyLimit(this@SettingsActivity)
+            val text = if (limit <= SendCostPolicy.UNLIMITED) {
+                "今日本机已为其他设备执行 $used 条计费短信；未设上限。"
+            } else {
+                "今日本机已为其他设备执行 $used / $limit 条计费短信，超出后拒绝新的发送指令。"
+            }
+            withContext(Dispatchers.Main) { tvRemoteSendUsage.text = text }
         }
     }
 

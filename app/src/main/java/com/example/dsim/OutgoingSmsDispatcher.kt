@@ -67,6 +67,15 @@ object OutgoingSmsDispatcher {
         val manager = smsManager(context, subscription)
         val parts = manager.divideMessage(body)
         require(parts.isNotEmpty()) { "短信内容为空" }
+        // Cost guard: a new command only. Re-queries of an existing UUID returned above and are free.
+        val limit = CloudSettingsManager.getRemoteSendDailyLimit(context)
+        if (limit > SendCostPolicy.UNLIMITED) {
+            val today = dao.sumSendSegmentsSince(SendCostPolicy.startOfDay(System.currentTimeMillis()))
+            if (SendCostPolicy.isOverLimit(today, parts.size, limit)) {
+                Log.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${parts.size})")
+                throw IllegalStateException(SendCostPolicy.overLimitMessage(limit))
+            }
+        }
         val record = SendCommandRecord(
             uuid = uuid, requestFingerprint = identity, groupFingerprint = group,
             requesterDeviceId = requesterDeviceId, address = target, body = body,

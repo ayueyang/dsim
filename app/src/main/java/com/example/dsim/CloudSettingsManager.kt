@@ -6,6 +6,8 @@ object CloudSettingsManager {
     private const val PREFS_NAME = "dSIM_UI_PREFS"
     private const val KEY_AUTO_CONNECT = "AUTO_CONNECT"
     private const val KEY_AUTO_RECONNECT = "AUTO_RECONNECT"
+    private const val KEY_REMOTE_SEND_ALLOWED = "REMOTE_SEND_ALLOWED"
+    private const val KEY_REMOTE_SEND_DAILY_LIMIT = "REMOTE_SEND_DAILY_LIMIT"
     private const val KEY_BROKER = "BROKER"
     private const val KEY_TOPIC = "TOPIC"
     private const val KEY_PASSWORD = "PASSWORD"
@@ -130,6 +132,32 @@ object CloudSettingsManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_AUTO_RECONNECT, enabled)
+            .apply()
+    }
+
+    /** Executor-side: may peers send carrier SMS through this device's SIMs? Default on. */
+    fun isRemoteSendAllowed(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_REMOTE_SEND_ALLOWED, true)
+    }
+
+    fun setRemoteSendAllowed(context: Context, allowed: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_REMOTE_SEND_ALLOWED, allowed)
+            .apply()
+    }
+
+    /** Executor-side: segments per local day this device will send for peers; 0 = unlimited. */
+    fun getRemoteSendDailyLimit(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_REMOTE_SEND_DAILY_LIMIT, SendCostPolicy.DEFAULT_DAILY_LIMIT)
+    }
+
+    fun setRemoteSendDailyLimit(context: Context, limit: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_REMOTE_SEND_DAILY_LIMIT, limit.coerceIn(SendCostPolicy.UNLIMITED, SendCostPolicy.MAX_LIMIT))
             .apply()
     }
 

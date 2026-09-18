@@ -674,7 +674,7 @@ queueId 生成规则：远程发起为 `queue_<当前毫秒>_<UUID 前 6 位>`�
 | 通知 | 静音通知 |
 | 验证码 | 验证码复制提示 |
 | 隐私 | 隐私模式 |
-| 云端配置 | MQTT 服务器 / 房间号（MQTT Topic） / 加密密码 / 保存 / 连接云端 / 断开云端 / 开机自动连接 / 断线自动重连 |
+| 云端配置 | MQTT 服务器 / 房间号（MQTT Topic） / 加密密码 / 保存 / 连接云端 / 断开云端 / 开机自动连接 / 断线自动重连 / 允许其他设备通过本机发短信（默认开） / 每日代发上限（默认 50 条，0 = 不限）+ 今日用量 |
 | 系统历史短信 | 系统历史短信导入 / 允许远程发起历史同步 / 本机立即开始 / 重置本机读取进度 / 历史同步任务弹窗 |
 | 测试 | 测试功能 |
 
@@ -1033,6 +1033,7 @@ dSIM/
 | `KEY_CACHE_LIMIT` | 4 个口令 | DsimCryptoUtils |
 | `HeartbeatPolicy.TICK_MS` / `MAX_SILENCE_MS` | 30,000 / 120,000 毫秒 | HeartbeatPolicy |
 | `ReconnectPolicy.BASE_DELAY_MS` / `MAX_DELAY_MS` | 5,000 / 300,000 毫秒 | ReconnectPolicy（服务自管重连退避；Paho automaticReconnect 关闭） |
+| `SendCostPolicy.DEFAULT_DAILY_LIMIT` / `MAX_LIMIT` | 50 / 10,000 条 | SendCostPolicy（执行端每自然日代发计费条数上限，见 AGENTS C21） |
 | `AEAD_IV_SIZE` | 12 字节 | DsimCryptoUtils |
 | `AEAD_TAG_BITS` | 128 | DsimCryptoUtils |
 | `AEAD_KEY_BITS` | 256 | DsimCryptoUtils |

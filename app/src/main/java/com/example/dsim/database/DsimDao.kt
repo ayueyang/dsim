@@ -15,6 +15,10 @@ interface DsimDao {
     @Query("SELECT * FROM send_commands WHERE uuid = :uuid")
     suspend fun getSendCommand(uuid: String): SendCommandRecord?
 
+    /** Segments this device committed to the carrier since [since]; FAILED rows were never billed. */
+    @Query("SELECT COALESCE(SUM(partCount), 0) FROM send_commands WHERE createdAt >= :since AND state != 'FAILED'")
+    suspend fun sumSendSegmentsSince(since: Long): Int
+
     @androidx.room.Update
     suspend fun updateSendCommand(command: SendCommandRecord)
 

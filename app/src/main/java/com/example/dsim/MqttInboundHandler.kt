@@ -214,6 +214,17 @@ internal class MqttInboundHandler(
         val dao = DsimDatabase.getDatabase(context).dsimDao()
         val config = dao.getSimConfigByKey(mappingKey) ?: return
         if (config.bindMode == "REMOTE_SHADOW") return
+        if (!CloudSettingsManager.isRemoteSendAllowed(context)) {
+            // Executor opted out of paying for peers. Answer so the requester's bubble does not
+            // hang in "sending"; a duplicate of an already executed UUID is still answered by the
+            // dispatcher (it never reaches the carrier), so check that first.
+            val existing = dao.getSendCommand(uuid)
+            if (existing == null) {
+                Log.w("dSIM_SyncService", "Rejected SEND_CMD from $requester: remote send disabled on this device")
+                publisher.publishSendCommandResult(uuid, requester, false, SendCostPolicy.REMOTE_SEND_DISABLED_MESSAGE)
+                return
+            }
+        }
         try {
             OutgoingSmsDispatcher.submit(context, uuid, target, body, requester, config,
                 session.config())

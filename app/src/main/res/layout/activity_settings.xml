@@ -374,6 +374,59 @@
                 android:text="网络中断后由后台自动重连。变更后会在下次连接时生效。"
                 android:textColor="#64748B"
                 android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/switchRemoteSendAllowed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="允许其他设备通过本机发短信"
+                android:textColor="#0F172A"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="关闭后，同组设备下发的发送指令会被本机拒绝并回报失败；本机 SIM 不会产生短信费用。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="每日代发上限（条，0 = 不限）"
+                    android:textColor="#0F172A"
+                    android:textSize="15sp" />
+
+                <EditText
+                    android:id="@+id/etRemoteSendDailyLimit"
+                    android:layout_width="88dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:imeOptions="actionDone"
+                    android:inputType="number"
+                    android:maxLength="5"
+                    android:textColor="#0F172A"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvRemoteSendUsage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="按本机自然日累计已执行的计费条数，超出后拒绝新的发送指令。"
+                android:textColor="#64748B"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <LinearLayout

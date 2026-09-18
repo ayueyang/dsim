@@ -378,6 +378,26 @@ class SmsChatActivity : AppCompatActivity() {
             return
         }
 
+        // The executing device pays per carrier segment. Segmentation depends only on the text, so
+        // count it here and make the user confirm before a long message turns into N bills.
+        val segments = try {
+            android.telephony.SmsManager.getDefault().divideMessage(body).size
+        } catch (e: Exception) {
+            1
+        }
+        if (segments > 1) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("将拆分为 $segments 条计费短信")
+                .setMessage("这条内容超过单条长度，对方设备会按 $segments 条短信付费。确认发送？")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("发送 $segments 条") { _, _ -> dispatchSendCommand(body, mappingKey) }
+                .show()
+            return
+        }
+        dispatchSendCommand(body, mappingKey)
+    }
+
+    private fun dispatchSendCommand(body: String, mappingKey: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             var pendingUuid: String? = null
             try {
