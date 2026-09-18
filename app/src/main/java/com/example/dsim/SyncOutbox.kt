@@ -1,7 +1,9 @@
 package com.example.dsim
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.room.withTransaction
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
@@ -25,10 +27,18 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
  * - A row whose group fingerprint no longer matches the active configuration is discarded, never
  *   published into a different group (same rule as `OutgoingSmsDispatcher.publishOutcome`).
  * - Publication is single-flight; concurrent triggers coalesce instead of double-publishing.
+ *
+ * Rows are either incoming-SMS syncs ([storeIncomingSms]) or control messages the peer is waiting
+ * on ([enqueueControl]: SEND_CMD_RESULT, HISTORY_SYNC_ACK, the sent-SMS sync). Fire-and-forget
+ * status (PING / PONG / OFFLINE) stays on the live client and never enters this table.
  */
 object SyncOutbox {
     private const val TAG = "dSIM_Outbox"
     const val KIND_SMS_SYNC = "SMS_SYNC"
+    /** Executor -> requester outcome of a SEND_CMD; the requester's UI is stuck on "sending" without it. */
+    const val KIND_SEND_CMD_RESULT = "SEND_CMD_RESULT"
+    /** Receiver -> importer ACK for a history-import row; the importer's queue stalls without it. */
+    const val KIND_HISTORY_SYNC_ACK = "HISTORY_SYNC_ACK"
     private const val BATCH_SIZE = 50
 
     private val flushMutex = Mutex()
@@ -69,6 +79,64 @@ object SyncOutbox {
             groupFingerprint = group,
             createdAt = now
         )
+    }
+
+    /**
+     * Row key for a control message. `uuid` is unique in the table, so the key carries the kind and a
+     * discriminator: a SEND_CMD goes PENDING -> SENT and both outcomes must be delivered, while a
+     * repeat of the very same outcome (callback retry) collapses onto the still-queued row.
+     */
+    fun controlKey(kind: String, uuid: String, discriminator: String?): String =
+        "$kind:$uuid:" + discriminator.orEmpty().take(32)
+
+    fun buildControlEntry(
+        kind: String,
+        uuid: String,
+        discriminator: String?,
+        json: String,
+        group: String,
+        now: Long = System.currentTimeMillis()
+    ): SyncOutboxEntry = SyncOutboxEntry(
+        uuid = controlKey(kind, uuid, discriminator),
+        kind = kind,
+        payloadJson = json,
+        groupFingerprint = group,
+        createdAt = now
+    )
+
+    /**
+     * Queue a control message for the group identified by [group] and ask the service to flush.
+     * Returns false when the usage mode forbids cloud traffic (nothing queued).
+     */
+    suspend fun enqueueControl(
+        context: Context,
+        kind: String,
+        uuid: String,
+        discriminator: String?,
+        json: String,
+        group: String
+    ): Boolean {
+        if (!UsageModeManager.canUseCloud(context)) return false
+        DsimDatabase.getDatabase(context).dsimDao()
+            .enqueueOutbox(buildControlEntry(kind, uuid, discriminator, json, group))
+        requestFlush(context)
+        return true
+    }
+
+    /**
+     * Ask [MqttSyncService] to drain the queue now. Safe from any component: the row is already
+     * durable, so a failure here only delays delivery until the next connect / heartbeat tick.
+     */
+    fun requestFlush(context: Context) {
+        if (!UsageModeManager.canUseCloud(context)) return
+        try {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, MqttSyncService::class.java).apply { action = MqttSyncService.ACTION_FLUSH_OUTBOX }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not start sync service for outbox flush; next tick will pick it up", e)
+        }
     }
 
     /**

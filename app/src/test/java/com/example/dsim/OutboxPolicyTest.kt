@@ -63,4 +63,24 @@ class OutboxPolicyTest {
         assertEquals(e, e.copy())
         assertNotEquals(e, e.copy(attempts = 1))
     }
+    @Test fun controlKeySeparatesKindUuidAndOutcome() {
+        val pending = SyncOutbox.controlKey(SyncOutbox.KIND_SEND_CMD_RESULT, "u1", "PENDING")
+        val sent = SyncOutbox.controlKey(SyncOutbox.KIND_SEND_CMD_RESULT, "u1", "SENT")
+        val ack = SyncOutbox.controlKey(SyncOutbox.KIND_HISTORY_SYNC_ACK, "u1", "ok:")
+        assertNotEquals(pending, sent)
+        assertNotEquals(sent, ack)
+        // A retry of the same outcome collapses onto the queued row (uuid is UNIQUE in sync_outbox).
+        assertEquals(sent, SyncOutbox.controlKey(SyncOutbox.KIND_SEND_CMD_RESULT, "u1", "SENT"))
+        // And never collides with the incoming-SMS row that uses the bare uuid.
+        assertNotEquals("u1", pending)
+    }
+
+    @Test fun controlEntryCarriesJsonVerbatimAndGroup() {
+        val e = SyncOutbox.buildControlEntry(SyncOutbox.KIND_HISTORY_SYNC_ACK, "u2", null, "{\"a\":1}", "g", now = 7L)
+        assertEquals(SyncOutbox.KIND_HISTORY_SYNC_ACK, e.kind)
+        assertEquals("{\"a\":1}", e.payloadJson)
+        assertEquals("g", e.groupFingerprint)
+        assertEquals(7L, e.createdAt)
+        assertEquals(SyncOutbox.Decision.DROP_GROUP_MISMATCH, SyncOutbox.decide(e, "other"))
+    }
 }

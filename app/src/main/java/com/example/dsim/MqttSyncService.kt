@@ -117,11 +117,6 @@ class MqttSyncService : Service() {
             }
         }
 
-        /** [publishToGroup] for callers that already hold a [CloudSettingsManager.CloudConfig]. */
-        @WorkerThread
-        fun publishCurrentGroup(context: Context, json: String, config: CloudSettingsManager.CloudConfig): Boolean =
-            publishToGroup(context, json, config.topic, config.password)
-
         fun isConnected(): Boolean = globalMqttClient?.isConnected == true
 
         /**
@@ -333,9 +328,9 @@ class MqttSyncService : Service() {
                 // Publish failed on a live client: say so instead of a bare backlog count, so the user can
                 // tell "waiting for network" from "broker rejected us". Next successful flush clears it.
                 val reason = result.lastError?.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()
-                updateNotification("云端状态：${result.remaining} 条短信待同步，上次发送失败$reason，将自动重试")
+                updateNotification("云端状态：${result.remaining} 条消息待同步，上次发送失败$reason，将自动重试")
             } else if (result.remaining > 0) {
-                updateNotification("云端状态：已连接，${result.remaining} 条短信待同步")
+                updateNotification("云端状态：已连接，${result.remaining} 条消息待同步")
             } else if (result.sent > 0 && globalMqttClient?.isConnected == true) {
                 updateNotification("云端状态：已连接，守护进程常驻中")
             }

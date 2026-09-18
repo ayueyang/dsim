@@ -9,7 +9,8 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 
 /**
  * Outbound side of the group channel: every control message this device publishes
- * (HISTORY_SYNC_ACK / SEND_CMD_RESULT / PING / PONG / OFFLINE) and the heartbeat fingerprint state.
+ * (PING / PONG / OFFLINE directly; HISTORY_SYNC_ACK / SEND_CMD_RESULT through [SyncOutbox], C11)
+ * and the heartbeat fingerprint state.
  *
  * Split out of [MqttSyncService] in W4. Uses the shared [CloudSession] for credentials and the
  * service-owned client handed in via [client]; it never opens or closes connections itself.
@@ -29,81 +30,57 @@ internal class MqttPublisher(
         heartbeatState = HeartbeatPolicy.State()
     }
 
-    fun publishHistorySyncAck(
+    /**
+     * The importer blocks on this ACK for 20 s per row; a lost ACK stalls its queue. Queued in
+     * [SyncOutbox] so it is delivered after a reconnect. The message text doubles as the row
+     * discriminator: "already_exists" after a plain ACK is a distinct answer, not a duplicate.
+     */
+    suspend fun publishHistorySyncAck(
         uuid: String,
         targetDeviceId: String,
         success: Boolean,
         message: String?
     ) {
-        if (
-            client()?.isConnected != true ||
-            session.topic.isBlank() ||
-            session.password.isBlank()
-        ) {
-            return
-        }
-
-        try {
-            val ackJson = MqttPayloadCodec.encode(
-                HistorySyncAckMsg(
-                    uuid = uuid,
-                    targetDeviceId = targetDeviceId,
-                    deviceId = HardwareProbeUtils.getDeviceId(context),
-                    deviceName = DeviceNameManager.getDisplayName(context),
-                    success = success,
-                    message = message?.takeIf { it.isNotBlank() }?.take(120)
-                )
+        if (uuid.isBlank() || targetDeviceId.isBlank() || !session.isConfigured) return
+        val ackJson = MqttPayloadCodec.encode(
+            HistorySyncAckMsg(
+                uuid = uuid,
+                targetDeviceId = targetDeviceId,
+                deviceId = HardwareProbeUtils.getDeviceId(context),
+                deviceName = DeviceNameManager.getDisplayName(context),
+                success = success,
+                message = message?.takeIf { it.isNotBlank() }?.take(120)
             )
-
-            val encryptedAck = DsimCryptoUtils.encryptOrNull(ackJson, session.password) ?: return
-
-            val ackMessage = MqttMessage(encryptedAck.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            client()?.publish(localPublishTopic(), ackMessage)
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送历史同步回执失败", e)
-        }
+        )
+        SyncOutbox.enqueueControl(
+            context, SyncOutbox.KIND_HISTORY_SYNC_ACK, uuid, (if (success) "ok" else "fail") + ":" + message.orEmpty(),
+            ackJson, SyncOutbox.groupFingerprint(session.config())
+        )
     }
 
-    fun publishSendCommandResult(
+    /** Immediate failure of a SEND_CMD before the dispatcher claimed it. Durable like every other outcome. */
+    suspend fun publishSendCommandResult(
         uuid: String,
         targetDeviceId: String,
         success: Boolean,
         message: String?
     ) {
-        if (
-            uuid.isBlank() ||
-            targetDeviceId.isBlank() ||
-            client()?.isConnected != true ||
-            session.topic.isBlank() ||
-            session.password.isBlank()
-        ) {
-            return
-        }
-
-        try {
-            val resultJson = MqttPayloadCodec.encode(
-                SendCmdResult(
-                    uuid = uuid,
-                    targetDeviceId = targetDeviceId,
-                    deviceId = HardwareProbeUtils.getDeviceId(context),
-                    deviceName = DeviceNameManager.getDisplayName(context),
-                    success = success,
-                    message = message?.takeIf { it.isNotBlank() }?.take(120),
-                    timestamp = System.currentTimeMillis()
-                )
+        if (uuid.isBlank() || targetDeviceId.isBlank() || !session.isConfigured) return
+        val resultJson = MqttPayloadCodec.encode(
+            SendCmdResult(
+                uuid = uuid,
+                targetDeviceId = targetDeviceId,
+                deviceId = HardwareProbeUtils.getDeviceId(context),
+                deviceName = DeviceNameManager.getDisplayName(context),
+                success = success,
+                message = message?.takeIf { it.isNotBlank() }?.take(120),
+                timestamp = System.currentTimeMillis()
             )
-
-            val encryptedResult = DsimCryptoUtils.encryptOrNull(resultJson, session.password) ?: return
-
-            val resultMessage = MqttMessage(encryptedResult.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            client()?.publish(localPublishTopic(), resultMessage)
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送短信结果回执失败", e)
-        }
+        )
+        SyncOutbox.enqueueControl(
+            context, SyncOutbox.KIND_SEND_CMD_RESULT, uuid, "prepare_failed",
+            resultJson, SyncOutbox.groupFingerprint(session.config())
+        )
     }
 
     suspend fun publishPing() {

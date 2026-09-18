@@ -73,7 +73,7 @@
 | W18 | P3 | 测试补齐（4 类纯逻辑） | M | W5 后更好做 |
 | W19 | **P0 ✅ 已完成** | 入站短信可靠同步：`sync_outbox` + 持久 MQTT 会话 | M | — |
 | W20 | **P0 ✅ 已完成** | 耗电：口令→主密钥一次派生（新魔数 DSM3）、按 topic 后缀跳过自身回声、心跳按变化发布 + LWT OFFLINE | M | 详见 `FIXES_2026-09-18.md` 第三批 |
-| W21 | P1 | 发送回执 / 历史 ACK 也走 `SyncOutbox`（W19 未覆盖） | S | W19 |
+| W21 | P1 | ✅（批次 E）发送回执 / 历史 ACK 也走 `SyncOutbox`（W19 未覆盖） | S | W19 |
 
 ---
 
@@ -343,6 +343,18 @@
 | `GlobalNumberUtils` | E.164 与非法号码回退 |
 
 **注意**：部分类是 `object` 单例并读取 Context，需要小幅重构（把依赖改成参数）才能测——这本身就是改善。
+
+---
+
+### W21（P1）发送回执 / 历史 ACK 走 `SyncOutbox` — ✅ 已完成（批次 E）
+
+**问题**：W19 只让入站短信走发件箱；`SEND_CMD_RESULT`（执行端→请求端的发送结果）和 `HISTORY_SYNC_ACK`（接收端→导入端的确认）仍是活连接直发。断连时丢失 → 请求端消息永远"发送中"、导入端队列每行等 20 s 超时后停住。
+
+**已做**：`SyncOutbox` 新增 `enqueueControl(kind, uuid, discriminator, json, group)` + `requestFlush()`；行键 `controlKey = "$kind:$uuid:$discriminator"`（表内 `uuid` 唯一），discriminator 区分同一 UUID 的不同结论（`PENDING`→`SENT` 两次都要送达；`ok:`/`ok:already_exists` 是不同回答），同一结论的回调重放则合并到未发出的行上。迁移：`OutgoingSmsDispatcher.publishOutcome`（结果 + 已发短信的 silentSync 同步，均按记录自带的 `groupFingerprint` 入队）、`MqttPublisher.publishHistorySyncAck` / `publishSendCommandResult`（变为 `suspend`，只负责组装 JSON 入队）。`SmsReceiver.requestOutboxFlush` 收敛为 `SyncOutbox.requestFlush`。删除已无调用者的 `publishCurrentGroup`。通知文案「N 条短信待同步」→「N 条消息待同步」。
+
+**不进发件箱**：PING / PONG / OFFLINE / 雷达 PING / 聊天页发出的 `SEND_CMD`（用户可见失败并可重试，且 C11 的"不自动重发"语义要求发送指令不能在后台悄悄补发）。
+
+**验证**：JVM 64/64（新增 2 个 `controlKey` / `buildControlEntry` 测试）；模拟器：历史导入行 → `HISTORY_SYNC_ACK` 2.1 s，同行重发 → `already_exists` ACK 2.3 s；`SEND_CMD` → `SEND_CMD_RESULT(SENT)` + 已发短信同步 1.9 s（`outbox[capture] sent=2`）；断网期间收到短信 → 落库，重连后 `outbox[connect] sent=1`。
 
 ---
 

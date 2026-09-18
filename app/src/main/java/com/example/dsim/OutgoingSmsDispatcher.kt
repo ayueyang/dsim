@@ -152,7 +152,12 @@ object OutgoingSmsDispatcher {
         iccid = null, mappingKey = record.mappingKey, errorMsg = record.errorMsg
     )
 
-    internal fun publishOutcome(context: Context, record: SendCommandRecord) {
+    /**
+     * Hand the outcome to the durable outbox (C11). The requester's message stays "sending" until
+     * SEND_CMD_RESULT reaches it, so this must survive a dropped connection; the outbox delivers it
+     * after reconnect and drops it if the user has since left the group.
+     */
+    internal suspend fun publishOutcome(context: Context, record: SendCommandRecord) {
         if (!UsageModeManager.canUseCloud(context)) return
         val cloud = CloudSettingsManager.getConfig(context)
         // A callback may arrive after the user switches cloud groups. Never leak into the new group.
@@ -169,12 +174,14 @@ object OutgoingSmsDispatcher {
                 timestamp = System.currentTimeMillis()
             )
         )
-        MqttSyncService.publishCurrentGroup(context, result, cloud)
+        SyncOutbox.enqueueControl(context, SyncOutbox.KIND_SEND_CMD_RESULT, record.uuid, record.state,
+            result, record.groupFingerprint)
         if (record.state == SendCommandPolicy.SENT || record.state == SendCommandPolicy.FAILED) {
             // Ordinary sync carries the final state; do not announce an unconfirmed submission.
             val payload = SyncPayload(toSms(record), record.remarkPhone,
                 DeviceNameManager.getDisplayName(context), silentSync = true)
-            MqttSyncService.publishCurrentGroup(context, MqttPayloadCodec.encode(payload), cloud)
+            SyncOutbox.enqueueControl(context, SyncOutbox.KIND_SMS_SYNC, record.uuid, "sent:" + record.state,
+                MqttPayloadCodec.encode(payload), record.groupFingerprint)
         }
     }
 

@@ -83,3 +83,11 @@
   an `adb reboot` fixed it. On reboot the BOOT_COMPLETED start of MqttSyncService crashes with
   ForegroundServiceStartNotAllowedException (FGS type dataSync not allowed from BOOT_COMPLETED, API 34+) - PRE-EXISTING,
   unrelated to W7; logged as a follow-up (F-boot). dsim_probe_w5.py's 5 s PONG window is too tight on this host; use dsim_probe_w7.py.
+
+## E6 (W21) — done
+- SyncOutbox.enqueueControl/requestFlush/controlKey; SEND_CMD_RESULT + sent-SMS sync (OutgoingSmsDispatcher.publishOutcome)
+  and HISTORY_SYNC_ACK / prepare-failed SEND_CMD_RESULT (MqttPublisher) now durable. publishCurrentGroup removed (no callers).
+- Tests 64/64 (2 new). Emulator: HISTORY_SYNC_ACK 2.1s, already_exists ACK 2.3s, SEND_CMD -> RESULT(SENT)+sync 1.9s (sent=2),
+  offline inbound SMS flushed on next connect (sent=1).
+- Env note: after svc data/wifi disable+enable the emulator's Paho did NOT reconnect (连接失败 once, then silence; auto-reconnect
+  is enabled in prefs?) — needed force-stop + relaunch. Worth checking on a real device; pre-existing, not W21.

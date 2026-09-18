@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
-import androidx.core.content.ContextCompat
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CoroutineScope
@@ -81,7 +80,7 @@ open class SmsReceiver : BroadcastReceiver() {
                 )
                 NotificationUtils.showNewMessageNotification(context, newSms, receivingPhone)
                 if (enqueued) {
-                    requestOutboxFlush(context)
+                    SyncOutbox.requestFlush(context)
                 }
 
                 Log.d(
@@ -121,18 +120,4 @@ open class SmsReceiver : BroadcastReceiver() {
     }
 
     /** Ask the sync service to drain the outbox. Safe when the service is already running. */
-    private fun requestOutboxFlush(context: Context) {
-        if (!UsageModeManager.canUseCloud(context)) return
-        try {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, MqttSyncService::class.java).apply {
-                    action = MqttSyncService.ACTION_FLUSH_OUTBOX
-                }
-            )
-        } catch (e: Exception) {
-            // Row is durable; the next connectComplete/heartbeat will pick it up.
-            Log.w("dSIM_Receiver", "Could not start sync service for outbox flush", e)
-        }
-    }
 }
