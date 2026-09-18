@@ -50,9 +50,6 @@ object DsimCryptoUtils {
 
     private const val TAG = "dSIM_Crypto"
 
-    /** 加密失败时返回的哨兵值。调用方必须在发送前比对该值。 */
-    const val ENCRYPTION_ERROR = "ENCRYPTION_ERROR"
-
     private const val AEAD_MAGIC = "DSM3"
     private const val AEAD_IV_SIZE = 12
     private const val AEAD_TAG_BITS = 128
@@ -84,15 +81,15 @@ object DsimCryptoUtils {
      *
      * @param secret 用户口令，即共享密钥的种子。传入的是**口令**，不是 MQTT Topic；
      *               Topic 只决定报文投递到哪个频道，不参与密钥派生。
-     * @return 密文；失败时返回 [ENCRYPTION_ERROR]。
+     * @return 密文；失败时返回 `null`（已记录日志）。调用方用 `?: return` 处理，不要再比对哨兵字符串。
      */
     @WorkerThread
-    fun encryptMessage(plaintext: String, secret: String): String {
+    fun encryptOrNull(plaintext: String, secret: String): String? {
         return try {
             Base64.encodeToString(seal(plaintext.toByteArray(Charsets.UTF_8), secret), Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.e(TAG, "encrypt failed", e)
-            ENCRYPTION_ERROR
+            null
         }
     }
 

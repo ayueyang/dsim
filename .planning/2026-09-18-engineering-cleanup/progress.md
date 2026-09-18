@@ -20,3 +20,27 @@
 - Helper added outside repo: C:\Users\admin\AgentDock\dsim_launch.ps1 (WMI-detached gradle launcher, avoids nested-quote issue).
 
 ## Next: E2 = W5 protocol data classes (separate plan step / commit).
+
+## E2 (W5) — done
+- New `MqttProtocol.kt`: `MqttAction` consts, `sealed interface MqttInbound` (SendCmd / SendCmdResult / HistorySyncAckMsg /
+  HistoryQueueBatch / Ping / Pong / Offline / SmsSync), nested `QueueTargetMsg` / `SimSnapshotMsg` / `HistoryQueueStateMsg`,
+  `MqttPayloadCodec.encode/decode/senderId` (Gson, disableHtmlEscaping, nulls omitted, decode never throws).
+- `handleIncomingMessage`: 8-step if-chain -> `when (inbound)` exhaustive; unknown/garbage logs one WARN and returns.
+- Producers migrated: SmsChatActivity (SEND_CMD), OutgoingSmsDispatcher (SEND_CMD_RESULT + SyncPayload), HistorySyncQueueManager
+  (HISTORY_QUEUE_BATCH), DeviceManagerActivity (PING), MqttSyncService (ACK / RESULT / PING / PONG / OFFLINE / will),
+  MainActivity + SystemSmsHistoryImporter + SyncOutbox (SyncPayload encode). DeviceDirectoryManager.saveRemoteSnapshot takes `Pong`.
+- `DsimCryptoUtils.encryptMessage` -> `encryptOrNull(): String?`; `ENCRYPTION_ERROR` const deleted; 11 sentinel compares -> `?: return`.
+- `SendCmdPayload.kt` deleted (superseded by `SendCmd`, which also carries deviceId/deviceName).
+- Wire format unchanged. PONG fingerprint input switched from JSONArray.toString() to a stable joined string; the first PONG after
+  upgrade is therefore "changed" (one extra publish), harmless.
+- Tests: new `MqttPayloadCodecTest` 10 cases (round trips, legacy PONG with `position:null`, legacy RESULT without `state`,
+  garbage/unknown -> null, wrong-typed field -> null, senderId per type, nulls omitted). JVM 62/62.
+- Build: `testDebugUnitTest assembleDebug` DONE exit=0; `assembleRelease -x lintVital*` DONE exit=0 (20:17:55).
+- Emulator (dsim_probe_w5.py, external paho + Python AES-GCM, pre-W5 JSON shapes):
+  legacy PONG accepted; PING -> emulator answered PONG with keys [action,battery,deviceId,deviceName,historyQueue,isCharging,
+  isDefaultSms,sims], sims[0] = {mappingKey ICCID_8986..., subscriptionId 2, slotIndex 0, phone +13800138001, mode ROOT_ICCID},
+  historyQueue without `position` (null omitted -> old builds read optInt default, fine);
+  `{"action":"NOPE"}` and `{"hello":"world"}` -> "忽略无法识别的云端消息" and nothing else; OFFLINE -> "peer OFFLINE: peerprobeW5";
+  real inbound SMS -> dSIM_Receiver captured -> dSIM_Outbox flush sent=1 remaining=0.
+- Docs: REFACTORING.md (metrics, W5 heading/result, W11 table, batch table), AGENTS.md (tree, item 8, new C18).
+- Note: WMI-detached `cmd.exe /c python > log` produced no log file; running the probe via exec_command directly (~50 s) works.

@@ -7,8 +7,6 @@ import com.example.dsim.database.DsimDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.paho.client.mqttv3.MqttMessage
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.UUID
 
 object HistorySyncQueueManager {
@@ -314,32 +312,24 @@ object HistorySyncQueueManager {
             )
         }
 
-        val payloadJson = JSONObject().apply {
-            put("action", MqttSyncService.MQTT_ACTION_HISTORY_QUEUE_BATCH)
-            put("queueId", queueId)
-            put("createdAt", createdAt)
-            put("requestedByDeviceId", requesterId)
-            put("requestedByDeviceName", requesterName)
-            put(
-                "targets",
-                JSONArray().apply {
-                    queueTargets.forEach { target ->
-                        put(
-                            JSONObject().apply {
-                                put("deviceId", target.deviceId)
-                                put("deviceName", target.deviceName)
-                                put("position", target.position)
-                            }
-                        )
-                    }
+        val payloadJson = MqttPayloadCodec.encode(
+            HistoryQueueBatch(
+                queueId = queueId,
+                createdAt = createdAt,
+                requestedByDeviceId = requesterId,
+                requestedByDeviceName = requesterName,
+                targets = queueTargets.map { target ->
+                    QueueTargetMsg(
+                        deviceId = target.deviceId,
+                        deviceName = target.deviceName,
+                        position = target.position
+                    )
                 }
             )
-        }.toString()
+        )
 
-        val encrypted = DsimCryptoUtils.encryptMessage(payloadJson, password)
-        if (encrypted == "ENCRYPTION_ERROR") {
-            throw IllegalStateException("历史同步队列加密失败")
-        }
+        val encrypted = DsimCryptoUtils.encryptOrNull(payloadJson, password)
+            ?: throw IllegalStateException("历史同步队列加密失败")
 
         val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
             qos = 1

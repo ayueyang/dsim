@@ -26,7 +26,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.eclipse.paho.client.mqttv3.MqttMessage
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -510,20 +509,19 @@ class SmsChatActivity : AppCompatActivity() {
         password: String,
         topic: String
     ) {
-        val cmdJson = JSONObject().apply {
-            put("action", "SEND_CMD")
-            put("target", target)
-            put("body", body)
-            put("mappingKey", mappingKey)
-            put("uuid", uuid)
-            put("deviceId", HardwareProbeUtils.getDeviceId(this@SmsChatActivity))
-            put("deviceName", DeviceNameManager.getDisplayName(this@SmsChatActivity))
-        }.toString()
+        val cmdJson = MqttPayloadCodec.encode(
+            SendCmd(
+                target = target,
+                body = body,
+                mappingKey = mappingKey,
+                uuid = uuid,
+                deviceId = HardwareProbeUtils.getDeviceId(this@SmsChatActivity),
+                deviceName = DeviceNameManager.getDisplayName(this@SmsChatActivity)
+            )
+        )
 
-        val encryptedPayload = DsimCryptoUtils.encryptMessage(cmdJson, password)
-        if (encryptedPayload == "ENCRYPTION_ERROR") {
-            throw IllegalStateException("发送指令加密失败")
-        }
+        val encryptedPayload = DsimCryptoUtils.encryptOrNull(cmdJson, password)
+            ?: throw IllegalStateException("发送指令加密失败")
         val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
             qos = 1
         }

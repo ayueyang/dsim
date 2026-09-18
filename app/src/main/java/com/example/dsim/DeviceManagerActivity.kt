@@ -357,13 +357,12 @@ class DeviceManagerActivity : AppCompatActivity() {
             return false
         }
 
-        val pingJson = org.json.JSONObject().apply {
-            put("action", "PING")
-            put("deviceId", HardwareProbeUtils.getDeviceId(this@DeviceManagerActivity))
-        }.toString()
+        val pingJson = MqttPayloadCodec.encode(
+            Ping(deviceId = HardwareProbeUtils.getDeviceId(this@DeviceManagerActivity))
+        )
 
         return try {
-            val encrypted = DsimCryptoUtils.encryptMessage(pingJson, password)
+            val encrypted = DsimCryptoUtils.encryptOrNull(pingJson, password) ?: return false
             val message = org.eclipse.paho.client.mqttv3.MqttMessage(
                 encrypted.toByteArray(Charsets.UTF_8)
             ).apply {

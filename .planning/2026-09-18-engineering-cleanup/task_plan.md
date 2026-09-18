@@ -24,14 +24,20 @@ history docs; JVM unit tests pass (52 baseline); assembleDebug PASS; assembleRel
 as documented); c8check + `git diff --check` clean. Runtime behaviour unchanged, so no emulator E2E needed
 beyond install + one inbound SMS smoke (`outbox sent=1 remaining=0`) to prove the APK still works.
 
-## E2 (W5) — protocol data classes (only if E1 lands cleanly)
-See REFACTORING.md W5. Separate commit; decide scope after E1.
+## E2 (W5) — protocol data classes
+Scope: sealed `MqttInbound` + `MqttPayloadCodec` in `MqttProtocol.kt`; all 15 JSONObject producers and the 8-branch receiver
+migrated; `encryptOrNull()` replaces the `ENCRYPTION_ERROR` sentinel (all 11 compares); `SendCmdPayload.kt` removed.
+Wire format unchanged -> must interoperate with pre-W5 builds (legacy-shape unit tests + external paho probe).
+Acceptance: JVM tests incl. new codec suite; assembleDebug + assembleRelease; emulator PING->PONG, legacy PONG accepted,
+garbage ignored, OFFLINE handled, inbound SMS still syncs.
 
 ## Steps
-- [ ] S1 plan dir + task + baseline (HEAD 842a32a)
-- [ ] S2 delete dead files + gradle deps
-- [ ] S3 DAO cleanup + 3 call sites
-- [ ] S4 build: test + assembleDebug + assembleRelease via WMI-detached gradle
-- [ ] S5 emulator smoke (install -r, grant, role, launch, emu sms send)
-- [ ] S6 docs sync
-- [ ] S7 c8check + diff --check + review + local commit (no push)
+- [x] S1 plan dir + task + baseline (HEAD 842a32a)
+- [x] S2 delete dead files + gradle deps
+- [x] S3 DAO cleanup + 3 call sites
+- [x] S4 build: test + assembleDebug + assembleRelease via WMI-detached gradle
+- [x] S5 emulator smoke (install -r, grant, role, launch, emu sms send)
+- [x] S6 docs sync
+- [x] S7 c8check + diff --check + review + local commit (no push)
+- [x] S8 W5 codec + migrate producers/receiver + tests
+- [x] S9 W5 build (debug+release) + emulator probe + docs (C18) + commit

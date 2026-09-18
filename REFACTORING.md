@@ -40,8 +40,8 @@
 | DI / ViewModel | 无 / 无 | 全部 `findViewById`，无 ViewBinding |
 | 兜底 catch | 63 处 `catch(...Exception...)` | 含多处 `catch(_: Exception){}` 静默吞掉 |
 | `printStackTrace` | 4 处 | |
-| 手工拼 JSON | 15 处 `JSONObject()` | 接收端 16 步 if-else 逐 action 分支 |
-| 哨兵字符串比较 | 11 处 `"ENCRYPTION_ERROR"` | |
+| 手工拼 JSON | 0（W5 前 15 处） | 协议全部经 `MqttPayloadCodec`；接收端 `when (inbound)` |
+| 哨兵字符串比较 | 0（W5 前 11 处） | `encryptOrNull()` 返回可空，哨兵已删 |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
 | 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
@@ -57,7 +57,7 @@
 | W2 | **P0** | `deviceId` 改为应用自管持久标识 | S | — |
 | W3 | **P0** | 历史同步状态机与文案解耦 | S | — |
 | W4 | P1 | 拆分 `MqttSyncService`（1088 行 / 21 个私有方法） | L | 建议在 W5 后 |
-| W5 | P1 | 协议消息数据类化 + 去哨兵字符串 | M | — |
+| W5 | P1 | ✅ 协议消息数据类化 + 去哨兵字符串（批次 E） | M | — |
 | W6 | P1 | 错误处理与可观测性 | M | — |
 | W7 | P1 | 并发与生命周期治理 | S/M | 与 W4 绑定 |
 | W8 | P1 | `mappingKey` 唯一性：补诊断日志（结构改造需人拍板） | S | — |
@@ -151,9 +151,11 @@
 
 ---
 
-### W5（P1）协议消息数据类化 + 去哨兵字符串
+### W5（P1）协议消息数据类化 + 去哨兵字符串 — ✅ 已完成（批次 E）
 
-**问题**：
+**结果**：`MqttProtocol.kt` 定义 `sealed interface MqttInbound`（`SendCmd` / `SendCmdResult` / `HistorySyncAckMsg` / `HistoryQueueBatch` / `Ping` / `Pong` / `Offline` / `SmsSync`）与 `MqttPayloadCodec.encode/decode/senderId`（Gson，宽松解析，永不抛出）；线格式字段名不变，与 W5 前构建双向兼容（有旧格式 PONG 解析单测 + 外部 paho 探针实测）。`DsimCryptoUtils.encryptMessage` 改为 `encryptOrNull(): String?`，`ENCRYPTION_ERROR` 常量删除。`SendCmdPayload.kt` 被 `SendCmd` 取代后删除。`org.json` 仅剩 `OtpRulesStore`（本地 prefs，不属协议）。
+
+**原问题**：
 - 15 处手工 `JSONObject()` 拼 payload，字段名散落各处，拼错无编译期检查；
 - 接收端是 16 步 if-else 逐 action 判断；
 - 11 处硬编码比较 `"ENCRYPTION_ERROR"` 字符串；
@@ -170,7 +172,7 @@
 
 **验收**：编译 + 12/12 + SEND_CMD 往返；`grep -c '"ENCRYPTION_ERROR"'` 降为 0（const 定义保留到迁移完成）。
 
-**注意**：`SendCmdPayload.kt` 在本条完成后就有了真实用途，届时从 W11 的死代码清单里移除。
+**注意**：实际实现中 `SendCmdPayload.kt` 缺 `deviceId`/`deviceName` 字段，直接由 `SendCmd` 取代并删除。
 
 ---
 
@@ -247,7 +249,7 @@
 |---|---|
 | `DsimMqttEngine.kt`（94 行） | 早期 EMQX 引擎，仅含 `SYNC_SMS` 旧协议 |
 | `DsimNetworkEngine.kt`（65 行） | 早期网络引擎 |
-| `SendCmdPayload.kt`（10 行） | **W5 完成后**它会被真正使用，届时从本清单移除 |
+| `SendCmdPayload.kt`（10 行） | W5 时由 `SendCmd` 取代，已删除 |
 | `res/layout/item_sms.xml` | 无任何引用 |
 | `gradle/libs.versions.toml` | 版本目录未生效，AGP 9.1.0 与实际 8.7.3 冲突；确认 `build.gradle.kts` 无 `libs.` 引用后删除 |
 
@@ -355,7 +357,7 @@
 > | B | W20 KDF 一次派生 + 按 topic 跳过回声 + 心跳放宽（PONG Toast 已顺手去掉） | ✅ 已完成 |
 > | C | 一行修复合集：`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | ✅ 已完成 |
 > | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://`、base topic 通配符校验 | ✅ 已完成 |
-> | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | W10/W11/hivemq ✅；W5 下一步 |
+> | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | W10/W11/hivemq ✅；W5 ✅；W4 下一步 |
 > | F | W21、W2、W3、W8、W12、W13、W9、W16–W18 | |
 > | 末 | W1（仅当产品决定支持运营商发送侧时） | |
 >

@@ -4,7 +4,6 @@ import android.content.Context
 import com.example.dsim.database.DeviceHistoryRecord
 import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.DsimDatabase
-import org.json.JSONObject
 
 object DeviceDirectoryManager {
     /**
@@ -47,35 +46,25 @@ object DeviceDirectoryManager {
         return snapshot
     }
 
-    suspend fun saveRemoteSnapshot(context: Context, jsonObject: JSONObject): Snapshot? {
-        val deviceId = jsonObject.optString("deviceId").trim()
+    suspend fun saveRemoteSnapshot(context: Context, pong: Pong): Snapshot? {
+        val deviceId = pong.deviceId.trim()
         if (deviceId.isBlank()) {
             return null
         }
 
-        val phoneNumbers = mutableListOf<String>()
-        val sims = jsonObject.optJSONArray("sims")
-        if (sims != null) {
-            for (index in 0 until sims.length()) {
-                val sim = sims.optJSONObject(index) ?: continue
-                val phone = sim.optString("phone").trim()
-                if (phone.isNotBlank()) {
-                    phoneNumbers += phone
-                }
-            }
-        }
+        val phoneNumbers = pong.sims.map { it.phone.trim() }.filter { it.isNotBlank() }
 
         val snapshot = Snapshot(
             deviceId = deviceId,
-            deviceName = jsonObject.optString("deviceName").trim().ifBlank { "未命名设备" },
+            deviceName = pong.deviceName.trim().ifBlank { "未命名设备" },
             phoneNumbers = phoneNumbers.distinct(),
-            batteryLevel = jsonObject.optInt("battery", -1),
-            isCharging = jsonObject.optBoolean("isCharging", false),
-            isDefaultSms = jsonObject.optBoolean("isDefaultSms", false),
-            simCount = sims?.length() ?: 0,
+            batteryLevel = pong.battery,
+            isCharging = pong.isCharging,
+            isDefaultSms = pong.isDefaultSms,
+            simCount = pong.sims.size,
             source = "REMOTE",
             isLocalDevice = false,
-            queue = parseQueueSnapshot(jsonObject.optJSONObject("historyQueue")),
+            queue = parseQueueSnapshot(pong.historyQueue),
             seenAt = System.currentTimeMillis()
         )
 
@@ -284,20 +273,20 @@ object DeviceDirectoryManager {
         )
     }
 
-    private fun parseQueueSnapshot(jsonObject: JSONObject?): QueueSnapshot {
-        if (jsonObject == null) {
+    private fun parseQueueSnapshot(state: HistoryQueueStateMsg?): QueueSnapshot {
+        if (state == null) {
             return QueueSnapshot()
         }
         return QueueSnapshot(
-            allowsRemoteHistorySync = jsonObject.optBoolean("allowRemoteStart", true),
-            queueId = jsonObject.optString("queueId").trim(),
-            queueStatus = jsonObject.optString("status").trim().ifBlank { HistorySyncQueueManager.STATUS_IDLE },
-            queuePosition = jsonObject.optInt("position", -1).takeIf { it > 0 },
-            queueLabel = jsonObject.optString("label").trim(),
-            queueDetail = jsonObject.optString("detail").trim(),
-            queueProgressCurrent = jsonObject.optInt("progressCurrent", 0).coerceAtLeast(0),
-            queueProgressTotal = jsonObject.optInt("progressTotal", 0).coerceAtLeast(0),
-            queueUpdatedAt = jsonObject.optLong("updatedAt", 0L)
+            allowsRemoteHistorySync = state.allowRemoteStart,
+            queueId = state.queueId.trim(),
+            queueStatus = state.status.trim().ifBlank { HistorySyncQueueManager.STATUS_IDLE },
+            queuePosition = state.position?.takeIf { it > 0 },
+            queueLabel = state.label.trim(),
+            queueDetail = state.detail.trim(),
+            queueProgressCurrent = state.progressCurrent.coerceAtLeast(0),
+            queueProgressTotal = state.progressTotal.coerceAtLeast(0),
+            queueUpdatedAt = state.updatedAt
         )
     }
 }

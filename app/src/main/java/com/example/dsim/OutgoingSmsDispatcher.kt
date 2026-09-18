@@ -14,7 +14,6 @@ import com.example.dsim.database.SendCommandRecord
 import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CancellationException
-import org.json.JSONObject
 
 /** At-most-once submission per UUID. A missing callback is NOT permission to send again. */
 object OutgoingSmsDispatcher {
@@ -158,23 +157,24 @@ object OutgoingSmsDispatcher {
         val cloud = CloudSettingsManager.getConfig(context)
         // A callback may arrive after the user switches cloud groups. Never leak into the new group.
         if (groupFingerprint(cloud) != record.groupFingerprint) return
-        val result = JSONObject().apply {
-            put("action", "SEND_CMD_RESULT")
-            put("uuid", record.uuid)
-            put("targetDeviceId", record.requesterDeviceId)
-            put("deviceId", record.deviceId)
-            put("success", record.state == SendCommandPolicy.SENT)
-            put("state", record.state)
-            put("message", record.errorMsg ?: if (record.state == SendCommandPolicy.UNKNOWN)
-                "发送结果未知；同一指令不会再次发送，请先确认收件端" else "")
-            put("timestamp", System.currentTimeMillis())
-        }.toString()
+        val result = MqttPayloadCodec.encode(
+            SendCmdResult(
+                uuid = record.uuid,
+                targetDeviceId = record.requesterDeviceId,
+                deviceId = record.deviceId,
+                success = record.state == SendCommandPolicy.SENT,
+                state = record.state,
+                message = record.errorMsg ?: if (record.state == SendCommandPolicy.UNKNOWN)
+                    "发送结果未知；同一指令不会再次发送，请先确认收件端" else "",
+                timestamp = System.currentTimeMillis()
+            )
+        )
         MqttSyncService.publishCurrentGroup(context, result, cloud)
         if (record.state == SendCommandPolicy.SENT || record.state == SendCommandPolicy.FAILED) {
             // Ordinary sync carries the final state; do not announce an unconfirmed submission.
             val payload = SyncPayload(toSms(record), record.remarkPhone,
                 DeviceNameManager.getDisplayName(context), silentSync = true)
-            MqttSyncService.publishCurrentGroup(context, com.google.gson.Gson().toJson(payload), cloud)
+            MqttSyncService.publishCurrentGroup(context, MqttPayloadCodec.encode(payload), cloud)
         }
     }
 

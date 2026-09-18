@@ -504,8 +504,6 @@ object SystemSmsHistoryImporter {
         private val topic: String,
         private val password: String
     ) {
-        private val gson = Gson()
-
         suspend fun publishAndAwaitAck(
             sms: SmsMessage,
             remarkPhone: String,
@@ -526,10 +524,8 @@ object SystemSmsHistoryImporter {
                     silentSync = true,
                     historyImport = true
                 )
-                val encrypted = DsimCryptoUtils.encryptMessage(gson.toJson(payload), password)
-                if (encrypted == "ENCRYPTION_ERROR") {
-                    return PublishAckResult(false, "历史短信加密失败，队列已暂停。")
-                }
+                val encrypted = DsimCryptoUtils.encryptOrNull(MqttPayloadCodec.encode(payload), password)
+                    ?: return PublishAckResult(false, "历史短信加密失败，队列已暂停。")
 
                 val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
                     qos = 1

@@ -269,14 +269,15 @@ class MainActivity : AppCompatActivity() {
                                                 remarkPhone = selectedConfig.phoneNumber,
                                                 deviceName = com.example.dsim.DeviceNameManager.getDisplayName(this@MainActivity)
                                             )
-                                            val payloadJson = com.google.gson.Gson().toJson(payloadObj)
-                                            val encrypted = com.example.dsim.DsimCryptoUtils.encryptMessage(payloadJson, password)
-                                            
-                                            val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
-                                            com.example.dsim.MqttSyncService.globalMqttClient?.publish(
-                                                com.example.dsim.CloudTopics.publishTopic(topic, com.example.dsim.HardwareProbeUtils.getDeviceId(this@MainActivity)),
-                                                mqttMsg
-                                            )
+                                            val payloadJson = com.example.dsim.MqttPayloadCodec.encode(payloadObj)
+                                            val encrypted = com.example.dsim.DsimCryptoUtils.encryptOrNull(payloadJson, password)
+                                            if (encrypted != null) {
+                                                val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+                                                com.example.dsim.MqttSyncService.globalMqttClient?.publish(
+                                                    com.example.dsim.CloudTopics.publishTopic(topic, com.example.dsim.HardwareProbeUtils.getDeviceId(this@MainActivity)),
+                                                    mqttMsg
+                                                )
+                                            }
                                         }
 
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -442,10 +443,10 @@ class MainActivity : AppCompatActivity() {
                                 remarkPhone = targetPhone,
                                 deviceName = DeviceNameManager.getDisplayName(this@MainActivity)
                             )
-                            val json = com.google.gson.Gson().toJson(payload)
-                            val encryptedBase64 = DsimCryptoUtils.encryptMessage(json, currentPassword)
-                            
-                            if (encryptedBase64 != "ENCRYPTION_ERROR") {
+                            val json = MqttPayloadCodec.encode(payload)
+                            val encryptedBase64 = DsimCryptoUtils.encryptOrNull(json, currentPassword)
+
+                            if (encryptedBase64 != null) {
                                 val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encryptedBase64.toByteArray(Charsets.UTF_8))
                                 mqttMsg.qos = 1
                                 client.publish(CloudTopics.publishTopic(currentTopic, HardwareProbeUtils.getDeviceId(this@MainActivity)), mqttMsg)

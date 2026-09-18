@@ -85,6 +85,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C13 | 发布只能发到 `CloudTopics.publishTopic(base, 本机 deviceId)`（即 `<base>/<deviceId>`），订阅只能订 `<base>/+`；不要往 `base` 本身发布 | 自身回声靠 topic 后缀在解密前丢弃（`messageArrived` 第一行）。发到 `base` 的报文所有人都要解密一次才能识别，且发送者身份无法从 topic 得到 |
 | C16 | 备份规则必须 deny-by-default：`backup_rules.xml` 与 `data_extraction_rules.xml` 排除**所有** domain，不要改成逐文件点名 | 备份规则是 allow-by-default 语义，没被 `<exclude>` 点名的一切都会进 Google Drive 备份与换机迁移。逐文件清单在下次改存储名时会静默失效，把明文口令和整个消息库漏出去。`<device-transfer>` 不受 `allowBackup` 约束，必须单独写 |
 | C17 | 房间号（base topic）在保存入口必须过 `CloudSettingsManager.validateBaseTopic`，云端凭据一律经 `CloudSettingsManager` 读写 | base topic 含 `+`/`#` 会让 C13 的 `<base>/<deviceId>` 变成非法发布目标、`<base>/+` 变成过宽订阅。直接 `getSharedPreferences("dSIM_UI_PREFS")` 读 BROKER/TOPIC/PASSWORD 会绕过校验与默认值，也挡死后续迁移到加密存储 |
+| C18 | MQTT 载荷只经 `MqttProtocol.kt` 的数据类 + `MqttPayloadCodec` 编解码；不得再手工拼 `JSONObject` 或读 `optString("action")`。字段名即线格式，改名 = 改协议，须与所有设备同步升级 | 字段名散落各处时拼错没有编译期检查；`decode()` 对未知 action / 缺失 `sms` 返回 `null` 而不是抛异常，新增消息类型必须同时加 `sealed` 子类、`decode` 分支与 `senderId` 分支（`when` 穷举会在编译期提醒） |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---
@@ -166,7 +167,7 @@ dSIM/
         │   │   ├── ComposeSmsActivity.kt         ✗ 占位
         │   │   ├── HeadlessSmsSendService.kt     ✗ 占位
         │   │   ├── MmsReceiver.kt                ✗ 占位
-        │   │   └── SendCmdPayload.kt             ⚠ 暂未使用（W5 协议数据类化时启用）
+        │   │   └── MqttProtocol.kt               MQTT 线协议数据类 + MqttPayloadCodec（W5）
         │   └── res/
         │       ├── layout/          19 个
         │       ├── drawable/        29 个（23 bg_* + 6 ic_*）
@@ -192,7 +193,7 @@ dSIM/
 5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
 6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前仍是明文，待迁移到 `EncryptedSharedPreferences`。批次 D 已做完两件事收窄风险：备份/迁移规则改为 deny-by-default（口令与 Room 库不再离开设备），且所有云端凭据读写已收口到 `CloudSettingsManager`（迁移时只需改一处）。迁移前要先想清楚密钥丢失（恢复出厂、Keystore 失效）后的降级路径。
 7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
-8. ~~清理死代码~~ 已完成（批次 E）：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml` 与 `hivemq-mqtt-client` 依赖已删；`DsimDao` 4 个零调用方法已删、`getAllSimConfigsForUi` 并入 `getAllSimConfigs`。`SendCmdPayload.kt` 保留给 W5。
+8. ~~清理死代码~~ 已完成（批次 E）：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml` 与 `hivemq-mqtt-client` 依赖已删；`DsimDao` 4 个零调用方法已删、`getAllSimConfigsForUi` 并入 `getAllSimConfigs`。`SendCmdPayload.kt` 随后在 W5 中由 `MqttProtocol.kt` 的 `SendCmd` 取代。
 9. **文案与配色去硬编码**：中文字符串应进 `strings.xml`（当前 `R.string.*` 使用次数为 0），界面色值应进 `colors.xml`。
 10. ~~自身回声日志级别~~ 已解决（批次 B）：发布 topic 带设备后缀，`messageArrived` 按 topic 丢弃自身回声，不再解密也不再打 WARNING。
 

@@ -117,8 +117,8 @@ object SyncOutbox {
                         failed++; break@loop
                     }
                     try {
-                        val encrypted = DsimCryptoUtils.encryptMessage(entry.payloadJson, config.password)
-                        if (encrypted == DsimCryptoUtils.ENCRYPTION_ERROR) {
+                        val encrypted = DsimCryptoUtils.encryptOrNull(entry.payloadJson, config.password)
+                        if (encrypted == null) {
                             dao.markOutboxAttempt(entry.id, "encrypt_failed"); failed++; break@loop
                         }
                         // Blocking QoS 1 publish: returns after PUBACK. Only then is the row removed.
