@@ -11,8 +11,8 @@ import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.annotation.WorkerThread
 import androidx.core.app.NotificationCompat
-import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +39,7 @@ class MqttSyncService : Service() {
     private val connectMutex = Mutex()
 
     private val session = CloudSession()
-    private val publisher = MqttPublisher(this, session)
+    private val publisher = MqttPublisher(this, session) { globalMqttClient }
     private val inbound = MqttInboundHandler(this, session, publisher)
     private var lastNotificationContent: String = "云端状态：正在启动守护服务"
 
@@ -60,10 +60,13 @@ class MqttSyncService : Service() {
         /** Drain [SyncOutbox]. Sent by capture paths after they persisted a row. */
         const val ACTION_FLUSH_OUTBOX = "com.example.dsim.FLUSH_OUTBOX"
 
-        var globalMqttClient: MqttClient? = null
-        private var staticTopic: String = ""
-        private var staticConfig: CloudSettingsManager.CloudConfig? = null
-        private var manualDisconnectInCurrentSession: Boolean = false
+        // Companion state survives START_STICKY restarts of the service instance, which is what
+        // "manual disconnect stays off until the user reconnects" relies on. Everything here is
+        // written only by the service; other components go through the functions below.
+        @Volatile private var globalMqttClient: MqttClient? = null
+        /** Group the live client is subscribed to; null until subscribed and after teardown. */
+        @Volatile private var staticConfig: CloudSettingsManager.CloudConfig? = null
+        @Volatile private var manualDisconnectInCurrentSession: Boolean = false
 
         val radarEventFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>()
         val connectionStateFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
@@ -78,55 +81,54 @@ class MqttSyncService : Service() {
             val message: String?
         )
 
-        fun publishEncryptedSms(
-            context: Context,
-            sms: SmsMessage,
-            remarkPhone: String,
-            topic: String,
-            password: String
-        ) {
-            try {
-                if (!UsageModeManager.canUseCloud(context) || globalMqttClient?.isConnected != true || staticTopic != topic) {
-                    return
-                }
-
-                val payload = SyncPayload(
-                    sms = sms,
-                    remarkPhone = remarkPhone,
-                    deviceName = DeviceNameManager.getDisplayName(context)
-                )
-                val json = MqttPayloadCodec.encode(payload)
-                val encryptedBase64 = DsimCryptoUtils.encryptOrNull(json, password) ?: return
-
-                val message = MqttMessage(encryptedBase64.toByteArray(Charsets.UTF_8)).apply {
-                    qos = 1
-                }
-                globalMqttClient?.publish(CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(context)), message)
-                Log.d("dSIM_SyncService", "已发送加密短信到云端: ${sms.address}")
-            } catch (e: Exception) {
-                Log.e("dSIM_SyncService", "发送失败: ${e.message}")
+        /**
+         * The one way for components outside the service to publish. Encrypts [json] with
+         * [password] and publishes it on this device's topic under [topic] (C13), but only while
+         * the live client is subscribed to exactly that group; a request for another topic or
+         * key is stale (settings changed under the caller) and is rejected instead of leaking
+         * onto a group the user has left.
+         *
+         * Fire-and-forget on top of a live socket. Callers that must not lose the message go
+         * through [SyncOutbox] (C11); this is for PING / send commands / debug tooling.
+         *
+         * @return false when cloud is disabled, not connected, the group does not match,
+         *   encryption failed or Paho threw. The reason is logged under dSIM_SyncService.
+         */
+        @WorkerThread
+        fun publishToGroup(context: Context, json: String, topic: String, password: String): Boolean {
+            if (!UsageModeManager.canUseCloud(context)) return false
+            val active = staticConfig
+            val client = globalMqttClient
+            if (active == null || client == null || !client.isConnected) return false
+            if (active.topic != topic || active.password != password) {
+                Log.w("dSIM_SyncService", "publish rejected: requested group is not the active one")
+                return false
             }
-        }
-
-        /** Reject stale callbacks/publications after configuration or usage mode changes. */
-        fun publishCurrentGroup(context: Context, json: String, config: CloudSettingsManager.CloudConfig): Boolean {
-            if (!UsageModeManager.canUseCloud(context) || staticConfig != config) return false
-            val client = globalMqttClient ?: return false
-            if (!client.isConnected) return false
             return try {
-                val encrypted = DsimCryptoUtils.encryptOrNull(json, config.password) ?: return false
+                val encrypted = DsimCryptoUtils.encryptOrNull(json, password) ?: return false
                 client.publish(
-                    CloudTopics.publishTopic(config.topic, HardwareProbeUtils.getDeviceId(context)),
+                    CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(context)),
                     MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
                 )
                 true
             } catch (e: Exception) {
-                Log.w("dSIM_SyncService", "Failed to publish command outcome; query again with the same UUID", e)
+                Log.w("dSIM_SyncService", "publish failed: ${e.message}", e)
                 false
             }
         }
 
+        /** [publishToGroup] for callers that already hold a [CloudSettingsManager.CloudConfig]. */
+        @WorkerThread
+        fun publishCurrentGroup(context: Context, json: String, config: CloudSettingsManager.CloudConfig): Boolean =
+            publishToGroup(context, json, config.topic, config.password)
+
         fun isConnected(): Boolean = globalMqttClient?.isConnected == true
+
+        /**
+         * True once the service has created a client in this process, connected or not. UI uses
+         * it to decide whether a notification refresh / local-mode switch has anything to act on.
+         */
+        fun hasClient(): Boolean = globalMqttClient != null
 
         fun registerHistoryImportAckWaiter(uuid: String): CompletableDeferred<HistorySyncAck> {
             val deferred = CompletableDeferred<HistorySyncAck>()
@@ -181,6 +183,7 @@ class MqttSyncService : Service() {
                 Log.d("dSIM_SyncService", "client teardown on local mode: ${e.message}")
             }
             globalMqttClient = null
+            staticConfig = null
             connectionStateFlow.value = false
             updateNotification(buildLocalModeMessage())
             return START_STICKY
@@ -208,24 +211,6 @@ class MqttSyncService : Service() {
             }
             // Not connected: fall through to the normal connect path below (respects
             // manual-disconnect and auto-connect settings). connectComplete will flush.
-        }
-
-        if (action == "ACTION_PUBLISH_MSG") {
-            val payloadBase64 = intent.getStringExtra("PAYLOAD")
-            val topic = intent.getStringExtra("TOPIC")
-            if (!payloadBase64.isNullOrBlank() && !topic.isNullOrBlank()) {
-                serviceScope.launch {
-                    try {
-                        val message = MqttMessage(payloadBase64.toByteArray(Charsets.UTF_8)).apply {
-                            qos = 1
-                        }
-                        globalMqttClient?.publish(CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(this@MqttSyncService)), message)
-                    } catch (e: Exception) {
-                        Log.e("dSIM_SyncService", "发送失败: ${e.message}")
-                    }
-                }
-            }
-            return START_STICKY
         }
 
         if (action == ACTION_BROADCAST_DEVICE_PROFILE) {
@@ -493,6 +478,7 @@ class MqttSyncService : Service() {
                 globalMqttClient?.disconnect()
                 globalMqttClient?.close()
                 globalMqttClient = null
+                staticConfig = null
                 connectionStateFlow.value = false
                 return@withLock
             }
@@ -500,7 +486,6 @@ class MqttSyncService : Service() {
             Log.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic")
 
             staticConfig = session.config()
-            staticTopic = session.topic
             publisher.resetHeartbeat()
             connectionStateFlow.value = true
             startSnapshotHeartbeat()

@@ -25,7 +25,6 @@ import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.eclipse.paho.client.mqttv3.MqttMessage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -394,7 +393,7 @@ class SmsChatActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                if (MqttSyncService.globalMqttClient?.isConnected != true) {
+                if (!MqttSyncService.isConnected()) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@SmsChatActivity, "云端未连接，无法下发发送指令", Toast.LENGTH_SHORT).show()
                     }
@@ -469,7 +468,7 @@ class SmsChatActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                if (MqttSyncService.globalMqttClient?.isConnected != true) {
+                if (!MqttSyncService.isConnected()) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@SmsChatActivity, "云端未连接，无法重试", Toast.LENGTH_SHORT).show()
                     }
@@ -520,15 +519,9 @@ class SmsChatActivity : AppCompatActivity() {
             )
         )
 
-        val encryptedPayload = DsimCryptoUtils.encryptOrNull(cmdJson, password)
-            ?: throw IllegalStateException("发送指令加密失败")
-        val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
-            qos = 1
+        if (!MqttSyncService.publishToGroup(this, cmdJson, topic, password)) {
+            throw IllegalStateException("发送指令未能发布，请检查云端连接与频道设置")
         }
-        MqttSyncService.globalMqttClient?.publish(
-            CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(this@SmsChatActivity)),
-            message
-        )
     }
 
     inner class SenderOptionAdapter(

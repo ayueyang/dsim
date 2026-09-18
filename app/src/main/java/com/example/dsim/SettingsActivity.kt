@@ -653,7 +653,7 @@ class SettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             HistoryQueueNotificationHelper.refresh(this@SettingsActivity)
         }
-        if (MqttSyncService.globalMqttClient != null) {
+        if (MqttSyncService.hasClient()) {
             ContextCompat.startForegroundService(
                 this,
                 Intent(this, MqttSyncService::class.java).apply {

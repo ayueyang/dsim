@@ -80,7 +80,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C8 | 所有源文件必须 UTF-8 无 BOM、LF 行尾 | 曾发生过 GBK 被误读为 UTF-8 后写回导致的中文乱码事故（4 处，已在 V2.0 修复） |
 | C9 | 新增 MQTT 动作时，需在 `handleIncomingMessage` 中按正确的顺序位置加分支，并对定向动作校验 `targetDeviceId == localDeviceId` | 顺序错会导致消息被上游分支吞掉；缺校验会导致别的设备的回执被误处理 |
 | C10 | 发信链路必须以 `uuid` 贯穿，落库前用 `dao.checkUuidExists` 判重 | 否则重发/回声会产生重复会话记录；实际发信前还必须原子认领 send_commands，不可用 status=0 短信行代替执行记录 |
-| C11 | 新增"必须送达对端"的云端发布点时，走 `SyncOutbox`（先落 `sync_outbox` 再由服务冲刷），不要直接 `globalMqttClient.publish` | 直接发布在断连时静默丢失。心跳 / PING / PONG 这类可丢的状态消息例外，可以直发 |
+| C11 | 新增"必须送达对端"的云端发布点时，走 `SyncOutbox`（先落 `sync_outbox` 再由服务冲刷），不要用 `MqttSyncService.publishToGroup` 直发（W7 起 `globalMqttClient` 已私有，服务外只能经该入口发布） | 直接发布在断连时静默丢失。心跳 / PING / PONG 这类可丢的状态消息例外，可以直发 |
 | C12 | MQTT 必须保持 clientId = `dSIM_<deviceId>`、`cleanSession=false`、文件持久化 | Broker 端为离线设备排队 QoS1 消息依赖持久会话；改成随机 clientId 或 cleanSession=true 会让对端离线期间的短信全部丢失 |
 | C13 | 发布只能发到 `CloudTopics.publishTopic(base, 本机 deviceId)`（即 `<base>/<deviceId>`），订阅只能订 `<base>/+`；不要往 `base` 本身发布 | 自身回声靠 topic 后缀在解密前丢弃（`messageArrived` 第一行）。发到 `base` 的报文所有人都要解密一次才能识别，且发送者身份无法从 topic 得到 |
 | C16 | 备份规则必须 deny-by-default：`backup_rules.xml` 与 `data_extraction_rules.xml` 排除**所有** domain，不要改成逐文件点名 | 备份规则是 allow-by-default 语义，没被 `<exclude>` 点名的一切都会进 Google Drive 备份与换机迁移。逐文件清单在下次改存储名时会静默失效，把明文口令和整个消息库漏出去。`<device-transfer>` 不受 `allowBackup` 约束，必须单独写 |

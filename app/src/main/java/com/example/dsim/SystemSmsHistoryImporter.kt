@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.eclipse.paho.client.mqttv3.MqttMessage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -439,8 +438,7 @@ object SystemSmsHistoryImporter {
         val config = CloudSettingsManager.getConfig(context)
         val topic = config.topic.trim()
         val password = config.password.trim()
-        val client = MqttSyncService.globalMqttClient
-        if (topic.isBlank() || password.isBlank() || client == null || !client.isConnected) {
+        if (topic.isBlank() || password.isBlank() || !MqttSyncService.isConnected()) {
             return null
         }
 
@@ -510,8 +508,7 @@ object SystemSmsHistoryImporter {
             remarkPhone: String,
             progressListener: ProgressListener?
         ): PublishAckResult {
-            val client = MqttSyncService.globalMqttClient
-            if (client == null || !client.isConnected) {
+            if (!MqttSyncService.isConnected()) {
                 return PublishAckResult(false, "云端连接已断开，队列已暂停。")
             }
 
@@ -525,13 +522,9 @@ object SystemSmsHistoryImporter {
                     silentSync = true,
                     historyImport = true
                 )
-                val encrypted = DsimCryptoUtils.encryptOrNull(MqttPayloadCodec.encode(payload), password)
-                    ?: return PublishAckResult(false, "历史短信加密失败，队列已暂停。")
-
-                val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
-                    qos = 1
+                if (!MqttSyncService.publishToGroup(context, MqttPayloadCodec.encode(payload), topic, password)) {
+                    return PublishAckResult(false, "历史短信未能发布（未连接、频道不符或加密失败），队列已暂停。")
                 }
-                client.publish(CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(context)), message)
 
                 val deadlineAt = System.currentTimeMillis() + HISTORY_ACK_TIMEOUT_MS
                 while (System.currentTimeMillis() < deadlineAt) {

@@ -20,7 +20,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.dsim.database.DeviceHistoryRecord
@@ -354,30 +353,10 @@ class DeviceManagerActivity : AppCompatActivity() {
         if (password.isBlank() || topic.isBlank()) {
             return false
         }
-        if (MqttSyncService.globalMqttClient?.isConnected != true) {
-            return false
-        }
-
         val pingJson = MqttPayloadCodec.encode(
             Ping(deviceId = HardwareProbeUtils.getDeviceId(this@DeviceManagerActivity))
         )
-
-        return try {
-            val encrypted = DsimCryptoUtils.encryptOrNull(pingJson, password) ?: return false
-            val message = org.eclipse.paho.client.mqttv3.MqttMessage(
-                encrypted.toByteArray(Charsets.UTF_8)
-            ).apply {
-                qos = 1
-            }
-            MqttSyncService.globalMqttClient?.publish(
-                CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(this@DeviceManagerActivity)),
-                message
-            )
-            true
-        } catch (e: Exception) {
-            Log.w("dSIM_DeviceManager", "PING publish failed", e)
-            false
-        }
+        return MqttSyncService.publishToGroup(this, pingJson, topic, password)
     }
 
     private fun createDeviceCard(profile: DeviceProfile, now: Long): View {

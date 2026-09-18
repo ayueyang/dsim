@@ -70,3 +70,16 @@
   inbound SMS captured during the outage flushed sent=1 after reconnect; notification returned to 守护进程常驻中.
   The "connected but publish throws" branch was not reachable this way (Paho's own reconnect wins); covered by code review.
 - Gotcha: Windows PowerShell 5 reads .ps1 without BOM as GBK -> non-ASCII regex in scripts breaks; keep helper scripts ASCII.
+
+## E5 (W7) — done
+- globalMqttClient private @Volatile; staticTopic removed; publishToGroup() is the single external publish entry
+  (checks canUseCloud + connected + topic&password == active group; encrypt; C13 publishTopic). 7 direct-publish sites migrated
+  (DeviceManager PING, SmsChat SEND_CMD, HistorySyncQueue batch, SystemSmsHistoryImporter.CloudPublisher, MainActivity debug x2).
+  Removed dead publishEncryptedSms + "ACTION_PUBLISH_MSG" branch. MqttPublisher takes client: () -> MqttClient?.
+- AGENTS.md C11 wording, REFACTORING.md W7 entry/table updated.
+- Build: test 62/62, assembleDebug + assembleRelease(-x lintVital*) exit=0.
+- Emulator: reinstall -> subscribed; probe_w7 PING->PONG ok 2.3s, SMS_DELIVER -> SyncPayload ok 1.6s (through publisher/outbox).
+- Env notes: emulator was memory-starved after gradle run (2 GB, swap thrash, load 28) -> FGS start timeout / ANR kill;
+  an `adb reboot` fixed it. On reboot the BOOT_COMPLETED start of MqttSyncService crashes with
+  ForegroundServiceStartNotAllowedException (FGS type dataSync not allowed from BOOT_COMPLETED, API 34+) - PRE-EXISTING,
+  unrelated to W7; logged as a follow-up (F-boot). dsim_probe_w5.py's 5 s PONG window is too tight on this host; use dsim_probe_w7.py.

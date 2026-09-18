@@ -263,21 +263,14 @@ class MainActivity : AppCompatActivity() {
                                         val password = cloudConfig.password
                                         val topic = cloudConfig.topic
 
-                                        if (password.isNotBlank() && topic.isNotBlank() && com.example.dsim.MqttSyncService.globalMqttClient?.isConnected == true) {
+                                        if (password.isNotBlank() && topic.isNotBlank()) {
                                             val payloadObj = com.example.dsim.SyncPayload(
                                                 sms = mockMsg,
                                                 remarkPhone = selectedConfig.phoneNumber,
                                                 deviceName = com.example.dsim.DeviceNameManager.getDisplayName(this@MainActivity)
                                             )
                                             val payloadJson = com.example.dsim.MqttPayloadCodec.encode(payloadObj)
-                                            val encrypted = com.example.dsim.DsimCryptoUtils.encryptOrNull(payloadJson, password)
-                                            if (encrypted != null) {
-                                                val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
-                                                com.example.dsim.MqttSyncService.globalMqttClient?.publish(
-                                                    com.example.dsim.CloudTopics.publishTopic(topic, com.example.dsim.HardwareProbeUtils.getDeviceId(this@MainActivity)),
-                                                    mqttMsg
-                                                )
-                                            }
+                                            com.example.dsim.MqttSyncService.publishToGroup(this@MainActivity, payloadJson, topic, password)
                                         }
 
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -385,8 +378,7 @@ class MainActivity : AppCompatActivity() {
             val currentTopic = etMqttTopic.text.toString().trim()
             val currentPassword = etMqttPassword.text.toString().trim()
             
-            val client = MqttSyncService.globalMqttClient
-            if (client == null || !client.isConnected) {
+            if (!MqttSyncService.isConnected()) {
                 tvReport.append("\n❌ 同步失败：底层 MQTT 隧道未连接，请先点击蓝色【接入】按钮！")
                 return
             }
@@ -444,20 +436,15 @@ class MainActivity : AppCompatActivity() {
                                 deviceName = DeviceNameManager.getDisplayName(this@MainActivity)
                             )
                             val json = MqttPayloadCodec.encode(payload)
-                            val encryptedBase64 = DsimCryptoUtils.encryptOrNull(json, currentPassword)
 
-                            if (encryptedBase64 != null) {
-                                val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encryptedBase64.toByteArray(Charsets.UTF_8))
-                                mqttMsg.qos = 1
-                                client.publish(CloudTopics.publishTopic(currentTopic, HardwareProbeUtils.getDeviceId(this@MainActivity)), mqttMsg)
-                                
+                            if (MqttSyncService.publishToGroup(this@MainActivity, json, currentTopic, currentPassword)) {
                                 successCount++
                                 if (msg.timestamp > newWatermark) {
                                     newWatermark = msg.timestamp
                                 }
                                 android.util.Log.d("dSIM_SyncBug", "[$index] 发送成功: ${msg.address}")
                             } else {
-                                android.util.Log.e("dSIM_SyncBug", "[$index] 加密失败: ${msg.address}")
+                                android.util.Log.e("dSIM_SyncBug", "[$index] 发布失败（未连接/频道不符/加密失败）: ${msg.address}")
                             }
                             kotlinx.coroutines.delay(50)
                         } catch (e: Exception) {

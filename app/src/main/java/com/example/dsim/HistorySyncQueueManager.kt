@@ -6,7 +6,6 @@ import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.DsimDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.eclipse.paho.client.mqttv3.MqttMessage
 import java.util.UUID
 
 object HistorySyncQueueManager {
@@ -282,8 +281,7 @@ object HistorySyncQueueManager {
         if (!UsageModeManager.canUseCloud(context)) {
             throw IllegalStateException("本地模式已关闭云端设备队列")
         }
-        val client = MqttSyncService.globalMqttClient
-        if (client?.isConnected != true) {
+        if (!MqttSyncService.isConnected()) {
             throw IllegalStateException("云端未连接")
         }
 
@@ -328,13 +326,9 @@ object HistorySyncQueueManager {
             )
         )
 
-        val encrypted = DsimCryptoUtils.encryptOrNull(payloadJson, password)
-            ?: throw IllegalStateException("历史同步队列加密失败")
-
-        val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
-            qos = 1
+        if (!MqttSyncService.publishToGroup(context, payloadJson, topic, password)) {
+            throw IllegalStateException("历史同步队列未能发布，请检查云端连接与频道设置")
         }
-        client.publish(CloudTopics.publishTopic(topic, requesterId), message)
 
         handleQueueBatch(
             context = context,

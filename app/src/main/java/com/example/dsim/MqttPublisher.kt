@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.example.dsim.database.DsimDatabase
+import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttMessage
 
 /**
@@ -11,13 +12,15 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
  * (HISTORY_SYNC_ACK / SEND_CMD_RESULT / PING / PONG / OFFLINE) and the heartbeat fingerprint state.
  *
  * Split out of [MqttSyncService] in W4. Uses the shared [CloudSession] for credentials and the
- * service-owned [MqttSyncService.globalMqttClient]; it never opens or closes connections itself.
+ * service-owned client handed in via [client]; it never opens or closes connections itself.
  * Invariants: C13 (publish only via [CloudTopics.publishTopic]) and C14 (PONG only through
  * [publishDeviceSnapshot]) live here.
  */
 internal class MqttPublisher(
     private val context: Context,
-    private val session: CloudSession
+    private val session: CloudSession,
+    /** Service-owned client; read fresh on every call because the service swaps it on reconnect. */
+    private val client: () -> MqttClient?
 ) {
     private var heartbeatState = HeartbeatPolicy.State()
 
@@ -33,7 +36,7 @@ internal class MqttPublisher(
         message: String?
     ) {
         if (
-            MqttSyncService.globalMqttClient?.isConnected != true ||
+            client()?.isConnected != true ||
             session.topic.isBlank() ||
             session.password.isBlank()
         ) {
@@ -57,7 +60,7 @@ internal class MqttPublisher(
             val ackMessage = MqttMessage(encryptedAck.toByteArray(Charsets.UTF_8)).apply {
                 qos = 1
             }
-            MqttSyncService.globalMqttClient?.publish(localPublishTopic(), ackMessage)
+            client()?.publish(localPublishTopic(), ackMessage)
         } catch (e: Exception) {
             Log.e("dSIM_SyncService", "发送历史同步回执失败", e)
         }
@@ -72,7 +75,7 @@ internal class MqttPublisher(
         if (
             uuid.isBlank() ||
             targetDeviceId.isBlank() ||
-            MqttSyncService.globalMqttClient?.isConnected != true ||
+            client()?.isConnected != true ||
             session.topic.isBlank() ||
             session.password.isBlank()
         ) {
@@ -97,14 +100,14 @@ internal class MqttPublisher(
             val resultMessage = MqttMessage(encryptedResult.toByteArray(Charsets.UTF_8)).apply {
                 qos = 1
             }
-            MqttSyncService.globalMqttClient?.publish(localPublishTopic(), resultMessage)
+            client()?.publish(localPublishTopic(), resultMessage)
         } catch (e: Exception) {
             Log.e("dSIM_SyncService", "发送短信结果回执失败", e)
         }
     }
 
     suspend fun publishPing() {
-        if (MqttSyncService.globalMqttClient?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
+        if (client()?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
             return
         }
 
@@ -122,7 +125,7 @@ internal class MqttPublisher(
             val pingMessage = MqttMessage(encryptedPing.toByteArray(Charsets.UTF_8)).apply {
                 qos = 1
             }
-            MqttSyncService.globalMqttClient?.publish(localPublishTopic(), pingMessage)
+            client()?.publish(localPublishTopic(), pingMessage)
         } catch (e: Exception) {
             Log.e("dSIM_SyncService", "发送 PING 失败", e)
         }
@@ -133,7 +136,7 @@ internal class MqttPublisher(
      * [HeartbeatPolicy] says it changed (or MAX_SILENCE_MS elapsed); PING replies and connects force it.
      */
     suspend fun publishDeviceSnapshot(force: Boolean) {
-        if (MqttSyncService.globalMqttClient?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
+        if (client()?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
             return
         }
 
@@ -217,7 +220,7 @@ internal class MqttPublisher(
             val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
                 qos = 1
             }
-            MqttSyncService.globalMqttClient?.publish(localPublishTopic(), message)
+            client()?.publish(localPublishTopic(), message)
             val reason = when {
                 force -> "forced"
                 heartbeatState.lastFingerprint != fingerprint -> "changed"
@@ -239,7 +242,7 @@ internal class MqttPublisher(
 
     /** Tell peers we are leaving on purpose. Synchronous and short; failures are irrelevant. */
     fun publishOfflineBestEffort() {
-        val client = MqttSyncService.globalMqttClient ?: return
+        val client = client() ?: return
         if (!client.isConnected || session.topic.isBlank() || session.password.isBlank()) return
         try {
             val encrypted = DsimCryptoUtils.encryptOrNull(

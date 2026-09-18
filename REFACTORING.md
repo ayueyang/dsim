@@ -59,7 +59,7 @@
 | W4 | P1 | 拆分 `MqttSyncService` — 第 1 步 ✅（批次 E：入站/出站抽出，1102 → 568 行）；第 2 步（连接管理）待 W7 一起 | L | — |
 | W5 | P1 | ✅ 协议消息数据类化 + 去哨兵字符串（批次 E） | M | — |
 | W6 | P1 | ✅ 错误处理与可观测性（批次 E：静默 catch 清零、outbox 失败原因进通知） | M | — |
-| W7 | P1 | 并发与生命周期治理 | S/M | 与 W4 绑定 |
+| W7 | P1 | ✅（批次 E） 并发与生命周期治理 | S/M | 与 W4 绑定 |
 | W8 | P1 | `mappingKey` 唯一性：补诊断日志（结构改造需人拍板） | S | — |
 | W9 | P2 | 包结构分层 | M | **放最后做** |
 | W10 | P2 | DAO 清理（4 个死方法 + 1 对重复方法） | S | — |
@@ -202,9 +202,16 @@
 
 ---
 
-### W7（P1）并发与生命周期治理
+### W7（P1）并发与生命周期治理 — ✅ 已完成（批次 E）
 
-**问题**（三处，均已实测确认）：
+**已做**：
+1. `serviceScope.cancel()` 已在 `onDestroy`（W4 时补上），本次核对 8 个 `launch` 点全部挂在 `serviceScope`。
+2. `globalMqttClient` 改为 `private @Volatile`，服务外 **0** 处直接触碰；`staticTopic` 删除，只剩 `staticConfig`（订阅成功时写、三条 teardown 路径清空）。外部发布统一走 `MqttSyncService.publishToGroup(context, json, topic, password)`——校验 canUseCloud、连接、**topic 与 password 都等于当前订阅组**，再加密、`publishTopic()` 发布（C13 不变），失败返回 false 并记日志。迁移了 7 个直发点：`DeviceManagerActivity.sendRadarPing`、`SmsChatActivity.publishSendCommand`、`HistorySyncQueueManager`（队列批次）、`SystemSmsHistoryImporter.CloudPublisher`、`MainActivity` 调试页两处；`publishCurrentGroup(config)` 保留为薄包装。只读方替换为 `isConnected()` / 新增 `hasClient()`。同时删除无调用者的 `publishEncryptedSms` 与 `"ACTION_PUBLISH_MSG"` 分支（后者会绕过加密校验直发任意主题）。`MqttPublisher` 改为通过构造参数 `client: () -> MqttClient?` 取客户端，不再反向引用服务静态量。
+3. `DsimCryptoUtils` 各入口早已标注 `@WorkerThread` 并有 KDoc；`publishToGroup` 同样标注（内部会加密）。
+
+**未做**：`manualDisconnectInCurrentSession` 仍是 companion 可变量——它必须跨 service 实例存活（START_STICKY 重启后仍保持"手动断开"），改成实例字段会破坏该语义；仅由服务线程写、`@Volatile` 读，够用。
+
+**原问题**（三处，均已实测确认）：
 
 1. `MqttSyncService` 的 `serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)`（第 40 行）**从不取消**——`onDestroy` 只取消了心跳 Job，8 个 `launch` 点可活过 Service 销毁
 2. `globalMqttClient` / `staticTopic` / `manualDisconnectInCurrentSession` 是 companion object 可变量，被 Activity/Receiver/Service 同时读写且无同步；`publishEncryptedSms` 里的 `staticTopic != topic` 守卫正是二者可能失步的自证

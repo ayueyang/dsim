@@ -42,4 +42,5 @@ garbage ignored, OFFLINE handled, inbound SMS still syncs.
 - [x] S8 W5 codec + migrate producers/receiver + tests
 - [x] S9 W5 build (debug+release) + emulator probe + docs (C18) + commit
 - [x] S10 W4 step 1: CloudSession + MqttPublisher + MqttInboundHandler; build + probe + docs + commit
+- [x] S12 W7: globalMqttClient private, publishToGroup single entry, 7 sites migrated; build + emulator + docs + commit
 - [x] S11 W6: silent catches -> 0, outbox failure visible in notification; build + emulator + docs + commit
