@@ -21,7 +21,9 @@ class BootReceiver : BroadcastReceiver() {
             val password = config.password
 
             if (isAutoConnect && topic.isNotBlank() && password.isNotBlank()) {
-                android.util.Log.d("dSIM_Boot", "⚡ 检测到开机广播，且自动连接已开启，正在拉起幽灵隧道...")
+                // MqttSyncService is a remoteMessaging FGS: allowed from BOOT_COMPLETED on API 35+
+                // (dataSync is not). Keep this the only place that starts it from a boot broadcast.
+                android.util.Log.d("dSIM_Boot", "boot broadcast + auto-connect on -> starting MqttSyncService")
                 val serviceIntent = Intent(context, MqttSyncService::class.java).apply {
                     action = MqttSyncService.ACTION_CONNECT
                     putExtra("MQTT_BROKER", broker)

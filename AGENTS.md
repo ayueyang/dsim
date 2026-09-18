@@ -86,6 +86,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C16 | 备份规则必须 deny-by-default：`backup_rules.xml` 与 `data_extraction_rules.xml` 排除**所有** domain，不要改成逐文件点名 | 备份规则是 allow-by-default 语义，没被 `<exclude>` 点名的一切都会进 Google Drive 备份与换机迁移。逐文件清单在下次改存储名时会静默失效，把明文口令和整个消息库漏出去。`<device-transfer>` 不受 `allowBackup` 约束，必须单独写 |
 | C17 | 房间号（base topic）在保存入口必须过 `CloudSettingsManager.validateBaseTopic`，云端凭据一律经 `CloudSettingsManager` 读写 | base topic 含 `+`/`#` 会让 C13 的 `<base>/<deviceId>` 变成非法发布目标、`<base>/+` 变成过宽订阅。直接 `getSharedPreferences("dSIM_UI_PREFS")` 读 BROKER/TOPIC/PASSWORD 会绕过校验与默认值，也挡死后续迁移到加密存储 |
 | C18 | MQTT 载荷只经 `MqttProtocol.kt` 的数据类 + `MqttPayloadCodec` 编解码；不得再手工拼 `JSONObject` 或读 `optString("action")`。字段名即线格式，改名 = 改协议，须与所有设备同步升级 | 字段名散落各处时拼错没有编译期检查；`decode()` 对未知 action / 缺失 `sms` 返回 `null` 而不是抛异常，新增消息类型必须同时加 `sealed` 子类、`decode` 分支与 `senderId` 分支（`when` 穷举会在编译期提醒） |
+| C19 | `MqttSyncService` 的前台服务类型是 `remoteMessaging`（清单 + `startForeground(id, n, FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)` 二者必须一致），不可改回 `dataSync`；`startForeground` 只经 `promoteToForeground()`，被系统拒绝时 `stopSelf` 而不是让异常杀进程 | Android 15+（targetSdk 35+）禁止 `BOOT_COMPLETED` 拉起 `dataSync` 前台服务，改回去 = 开机自启崩溃、守护进程直到用户开 app 才起来；`dataSync` 另有 6 h/24 h 时长预算，常驻守护会被 `onTimeout` 掐掉。`SystemHistoryImportService` 是用户发起、有界的导入，保持 `dataSync` |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---

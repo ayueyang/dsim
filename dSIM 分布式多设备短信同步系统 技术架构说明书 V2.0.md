@@ -207,7 +207,7 @@ SmsChatActivity.sendCommand
 |---|---|---|---|
 | `SmsListActivity` | Activity | 主进程 | Launcher 入口 |
 | `SmsChatActivity` | Activity | 主进程 | 会话详情 |
-| `MqttSyncService` | 前台 Service（`dataSync`） | 主进程 | 常驻守护，持通知 id 888 |
+| `MqttSyncService` | 前台 Service（`remoteMessaging`） | 主进程 | 常驻守护，持通知 id 888；类型见 AGENTS C19（`dataSync` 不能从开机广播启动） |
 | `SystemHistoryImportService` | 前台 Service（`dataSync`） | 主进程 | 历史导入期间临时启动 |
 | `SmsReceiver` | 广播接收器（优先级 2147483647） | 主进程 | 默认短信应用时处理 `SMS_DELIVER` |
 | `SmsReceivedReceiver` | 广播接收器（优先级 2147483647） | 主进程 | 非默认短信应用时处理 `SMS_RECEIVED` |
@@ -825,7 +825,7 @@ E.164 格式会按需保留国家码。
 
 `grantedSummary` 输出形如「已授权 x / y 项」。
 
-Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`SEND_SMS`、`RECEIVE_SMS`、`READ_SMS`、`RECEIVE_MMS`、`READ_PHONE_STATE`、`READ_PHONE_NUMBERS`、`READ_CONTACTS`、`POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED`。
+Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`FOREGROUND_SERVICE_REMOTE_MESSAGING`、`SEND_SMS`、`RECEIVE_SMS`、`READ_SMS`、`RECEIVE_MMS`、`READ_PHONE_STATE`、`READ_PHONE_NUMBERS`、`READ_CONTACTS`、`POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED`。
 
 其中 `READ_CONTACTS` 仅用于「新建会话」的联系人选择器。
 

@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
@@ -142,6 +143,32 @@ class MqttSyncService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * Enter the foreground as a `remoteMessaging` service (manifest type must match).
+     * Returns false when the platform rejects the start, e.g. ForegroundServiceStartNotAllowedException
+     * on API 31+; the caller must then stop the service instead of letting the exception kill the process.
+     */
+    private fun promoteToForeground(): Boolean {
+        val notification = createNotification(lastNotificationContent)
+        return try {
+            // The typed overload only on API 34+: the remoteMessaging bit is unknown to older
+            // frameworks, which parse the manifest type as 0 and would reject a non-zero mask.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("dSIM_SyncService", "startForeground rejected: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -162,10 +189,13 @@ class MqttSyncService : Service() {
         val action = intent?.action
         val isLocalOnlyMode = UsageModeManager.isLocalOnly(this)
 
-        startForeground(
-            NOTIFICATION_ID,
-            createNotification(lastNotificationContent)
-        )
+        if (!promoteToForeground()) {
+            // The system refused this start (FGS policy). Stop before the 5 s
+            // startForegroundService deadline so the process is not killed; rows already in
+            // sync_outbox are drained by the next allowed start (app open / capture / heartbeat).
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
 
         if (action == ACTION_APPLY_LOCAL_MODE) {
             manualDisconnectInCurrentSession = false

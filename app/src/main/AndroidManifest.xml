@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
     <!-- 基础短信权限 -->
     <uses-permission android:name="android.permission.SEND_SMS" />
@@ -137,12 +138,14 @@
             </intent-filter>
         </service>
 
-        <!-- 5. 分布式同步服务 (前台保活) -->
+        <!-- 5. 分布式同步服务 (前台保活)
+             类型是 remoteMessaging（设备间转送短信），不是 dataSync：
+             Android 15+ 禁止 BOOT_COMPLETED 拉起 dataSync（开机自启会崩），且 dataSync 有 6h/24h 时长预算。 -->
         <service
             android:name=".MqttSyncService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="remoteMessaging" />
 
         <service
             android:name=".SystemHistoryImportService"
