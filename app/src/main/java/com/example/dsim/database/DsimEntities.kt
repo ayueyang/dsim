@@ -104,3 +104,24 @@ data class SendCommandRecord(
     val state: String = "PENDING",
     val errorMsg: String? = null
 )
+
+/**
+ * Durable queue of cloud publications that must not be lost when the MQTT client is
+ * disconnected at capture time. Rows are deleted after the broker acknowledges (QoS 1).
+ * `payloadJson` is stored in plaintext and encrypted only at publish time so that a later
+ * password change still produces decryptable ciphertext for the current group.
+ */
+@Entity(
+    tableName = "sync_outbox",
+    indices = [Index(value = ["uuid"], unique = true), Index(value = ["createdAt"])]
+)
+data class SyncOutboxEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val uuid: String,
+    val kind: String,
+    val payloadJson: String,
+    val groupFingerprint: String,
+    val createdAt: Long,
+    val attempts: Int = 0,
+    val lastError: String? = null
+)

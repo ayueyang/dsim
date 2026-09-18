@@ -360,6 +360,12 @@ SEND_CMD 端到端已按 §5.2 实测跑通，不再列为缺口。
 前四项都可以在**不依赖 modem** 的前提下覆盖，是投入产出比最高的方向。
 
 
+## 2026-09-18 入站同步发件箱回归（批次 A）
+
+- 仪器测试：`adb shell am instrument -w -e class com.example.dsim.SyncOutboxDaoTest,com.example.dsim.SendCommandLedgerTest com.example.dsim.test/androidx.test.runner.AndroidJUnitRunner`，期望 `OK (10 tests)`。只用独立/内存数据库，不发布 MQTT。
+- 断网补发端到端：`adb shell svc wifi disable; svc data disable` → `adb emu sms send 10010 x` 两次 → logcat 应只有 `dSIM_Receiver: Captured`，**没有** `dSIM_Outbox: flush sent=` → `svc wifi enable; svc data enable`，重新拉起应用或等心跳 → 期望 `dSIM_Outbox: flush sent=2 dropped=0 failed=0 remaining=0` 与 `dSIM_SyncService: outbox[connect] sent=2`。
+- 注意 Paho 自动重连在模拟器切网后不一定立刻触发；本次验证是 `am force-stop` 后重新启动应用走 INIT_DAEMON 路径。这是测试手段，不是产品缺陷，但也说明 W20/连接状态机仍需完善。
+
 ## 2026-09-18 正确性回归补充
 
 先读 `FIXES_2026-09-18.md`。`verify-dsim.sh` 仅覆盖其列出的烟雾场景；12/12 不能证明实际发送成功、命令不重复执行或全部设备落库。

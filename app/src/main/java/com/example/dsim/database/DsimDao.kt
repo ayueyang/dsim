@@ -233,4 +233,27 @@ interface DsimDao {
 
     @Query("SELECT * FROM device_history ORDER BY seenAt DESC LIMIT :limit")
     suspend fun getRecentDeviceHistory(limit: Int): List<DeviceHistoryRecord>
+
+    // ---- sync_outbox: durable cloud publication queue ----
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enqueueOutbox(entry: SyncOutboxEntry): Long
+
+    @Query("SELECT * FROM sync_outbox ORDER BY createdAt ASC, id ASC LIMIT :limit")
+    suspend fun nextOutboxBatch(limit: Int): List<SyncOutboxEntry>
+
+    @Query("DELETE FROM sync_outbox WHERE id = :id")
+    suspend fun deleteOutboxEntry(id: Long)
+
+    @Query("UPDATE sync_outbox SET attempts = attempts + 1, lastError = :error WHERE id = :id")
+    suspend fun markOutboxAttempt(id: Long, error: String?)
+
+    @Query("DELETE FROM sync_outbox WHERE groupFingerprint != :currentGroup")
+    suspend fun purgeOutboxForOtherGroups(currentGroup: String): Int
+
+    @Query("SELECT COUNT(*) FROM sync_outbox")
+    suspend fun countOutbox(): Int
+
+    @Query("SELECT * FROM sync_outbox WHERE uuid = :uuid")
+    suspend fun getOutboxByUuid(uuid: String): SyncOutboxEntry?
 }

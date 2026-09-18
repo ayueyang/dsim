@@ -34,7 +34,8 @@ import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
-import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -70,6 +71,8 @@ class MqttSyncService : Service() {
         const val ACTION_APPLY_LOCAL_MODE = "com.example.dsim.APPLY_LOCAL_MODE"
         const val ACTION_BROADCAST_DEVICE_PROFILE = "com.example.dsim.BROADCAST_DEVICE_PROFILE"
         const val ACTION_REFRESH_NOTIFICATION = "com.example.dsim.REFRESH_NOTIFICATION"
+        /** Drain [SyncOutbox]. Sent by capture paths after they persisted a row. */
+        const val ACTION_FLUSH_OUTBOX = "com.example.dsim.FLUSH_OUTBOX"
 
         var globalMqttClient: MqttClient? = null
         private var staticTopic: String = ""
@@ -212,6 +215,15 @@ class MqttSyncService : Service() {
             return START_STICKY
         }
 
+        if (action == ACTION_FLUSH_OUTBOX) {
+            if (globalMqttClient?.isConnected == true) {
+                serviceScope.launch { flushOutbox("capture") }
+                return START_STICKY
+            }
+            // Not connected: fall through to the normal connect path below (respects
+            // manual-disconnect and auto-connect settings). connectComplete will flush.
+        }
+
         if (action == "ACTION_PUBLISH_MSG") {
             val payloadBase64 = intent.getStringExtra("PAYLOAD")
             val topic = intent.getStringExtra("TOPIC")
@@ -257,7 +269,11 @@ class MqttSyncService : Service() {
             manualDisconnectInCurrentSession = false
         }
 
-        if (action == ACTION_INIT_DAEMON && globalMqttClient?.isConnected == true) {
+        // A flush request while disconnected behaves like a daemon (re)start: it honours the
+        // manual-disconnect flag and the auto-connect setting instead of forcing a connection.
+        val daemonLikeAction = action == ACTION_INIT_DAEMON || action == ACTION_FLUSH_OUTBOX
+
+        if (daemonLikeAction && globalMqttClient?.isConnected == true) {
             startSnapshotHeartbeat()
             connectionStateFlow.value = true
             updateNotification("云端状态：已连接，守护进程常驻中")
@@ -281,7 +297,7 @@ class MqttSyncService : Service() {
         currentPassword = password
         currentBroker = broker
 
-        if (action == ACTION_INIT_DAEMON || action == null) {
+        if (daemonLikeAction || action == null) {
             when {
                 manualDisconnectInCurrentSession -> {
                     updateNotification(buildManualDisconnectMessage())
@@ -330,6 +346,30 @@ class MqttSyncService : Service() {
         Log.d("dSIM_SyncService", "同步服务已关闭")
     }
 
+    /**
+     * Drain the durable outbox through the current client. Notification shows the backlog while
+     * rows remain so the user can see that capture succeeded but upload is still pending.
+     */
+    private suspend fun flushOutbox(trigger: String) {
+        val config = staticConfig ?: CloudSettingsManager.CloudConfig(currentBroker, currentTopic, currentPassword)
+        if (config.topic.isBlank() || config.password.isBlank()) return
+        try {
+            val result = SyncOutbox.flush(this, globalMqttClient, config)
+            if (result.remaining > 0) {
+                updateNotification("云端状态：已连接，${result.remaining} 条短信待同步")
+            } else if (result.sent > 0 && globalMqttClient?.isConnected == true) {
+                updateNotification("云端状态：已连接，守护进程常驻中")
+            }
+            if (result.sent > 0 || result.failed > 0) {
+                Log.d("dSIM_SyncService", "outbox[$trigger] sent=${result.sent} failed=${result.failed} remaining=${result.remaining}")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("dSIM_SyncService", "outbox flush failed ($trigger)", e)
+        }
+    }
+
     private fun buildManualDisconnectMessage(): String {
         return "云端状态：已手动断开，本次不会自动重连"
     }
@@ -349,6 +389,7 @@ class MqttSyncService : Service() {
                     continue
                 }
                 try {
+                    flushOutbox("heartbeat")
                     publishDeviceSnapshot()
                 } catch (e: Exception) {
                     Log.e("dSIM_SyncService", "定时广播设备快照失败", e)
@@ -370,7 +411,9 @@ class MqttSyncService : Service() {
         }
         try {
             val deviceId = HardwareProbeUtils.getDeviceId(this)
-            val clientId = "dSIM_SEC_${deviceId}_${System.currentTimeMillis()}"
+            // Stable client id + persistent session: the broker queues QoS 1 messages for this
+            // device while it is offline. A per-launch id would make every restart a new session.
+            val clientId = "dSIM_${deviceId}"
 
             if (globalMqttClient?.isConnected == true) {
                 connectionStateFlow.value = true
@@ -382,10 +425,11 @@ class MqttSyncService : Service() {
             } catch (_: Exception) {
             }
 
-            globalMqttClient = MqttClient(currentBroker, clientId, MemoryPersistence())
+            val persistenceDir = File(filesDir, "mqtt").apply { mkdirs() }
+            globalMqttClient = MqttClient(currentBroker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
             val autoReconnectEnabled = CloudSettingsManager.isAutoReconnectEnabled(this)
             val options = MqttConnectOptions().apply {
-                isCleanSession = true
+                isCleanSession = false
                 connectionTimeout = 15
                 keepAliveInterval = 30
                 setAutomaticReconnect(autoReconnectEnabled)
@@ -412,6 +456,7 @@ class MqttSyncService : Service() {
                         try {
                             globalMqttClient?.subscribe(currentTopic, 1)
                             serviceScope.launch {
+                                flushOutbox("reconnect")
                                 publishPing()
                                 publishDeviceSnapshot()
                             }
@@ -447,9 +492,10 @@ class MqttSyncService : Service() {
             connectionStateFlow.value = true
             startSnapshotHeartbeat()
 
+            updateNotification("云端状态：已连接，守护进程常驻中")
+            flushOutbox("connect")
             publishPing()
             publishDeviceSnapshot()
-            updateNotification("云端状态：已连接，守护进程常驻中")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

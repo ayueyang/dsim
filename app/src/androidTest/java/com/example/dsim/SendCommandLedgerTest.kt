@@ -71,11 +71,13 @@ class SendCommandLedgerTest {
             initial.close()
             val raw = context.openOrCreateDatabase(name, 0, null)
             raw.execSQL("DROP TABLE send_commands")
+            raw.execSQL("DROP TABLE sync_outbox")
             raw.execSQL("DROP TABLE room_master_table")
             raw.version = 5
             raw.close()
+            // Chain every migration from the faked version to the current schema version.
             val migrated = Room.databaseBuilder(context, DsimDatabase::class.java, name)
-                .addMigrations(DsimDatabase.MIGRATION_5_6).build()
+                .addMigrations(DsimDatabase.MIGRATION_5_6, DsimDatabase.MIGRATION_6_7).build()
             try {
                 assertEquals(1, migrated.dsimDao().checkUuidExists("old-command"))
                 assertEquals("UNKNOWN", migrated.dsimDao().getSendCommand("old-command")!!.state)

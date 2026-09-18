@@ -52,12 +52,12 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
        SenderColorUtils / ConversationProfileStore / DeviceDirectoryManager
 同步   MqttSyncService(前台服务·协议中枢) / HistorySyncQueueManager / DsimCryptoUtils
 采集   SmsReceiver(+SmsReceivedReceiver) / SystemSmsHistoryImporter / HardwareProbeUtils
-数据   Room DsimDatabase v6 (5 实体，新增 send_commands) + 9 组 SharedPreferences
+数据   Room DsimDatabase v7 (6 实体：send_commands 执行账本、sync_outbox 同步发件箱) + 9 组 SharedPreferences
 ```
 
 **两条主链路（务必记住真实走向）：**
 
-- 入站短信：`SmsReceiver` → 标准化 → 解析归属卡 → 写 Room → 回写系统库 → 发通知 → **直接取 `MqttSyncService.globalMqttClient` 发布**。不经过 `MqttSyncService` 的方法中转。
+- 入站短信：`SmsReceiver` → 标准化 → 解析归属卡 → **`SyncOutbox.storeIncomingSms` 在同一事务里写 `sms_messages` + `sync_outbox`** → 回写系统库 → 发通知 → `startForegroundService(ACTION_FLUSH_OUTBOX)`。Receiver **不再触碰 MQTT 客户端**；真正的发布由 `MqttSyncService.flushOutbox()` 在连接建立 / 重连 / 心跳 / 显式冲刷时通过 `SyncOutbox.flush` 完成，QoS1 PUBACK 后才删行。断网时短信落库但留在发件箱，通知栏显示「N 条短信待同步」。
 - 出站短信：`SmsChatActivity` 预生成 uuid 并落库 status=0 → 发 `SEND_CMD` → 执行端 `OutgoingSmsDispatcher` 原子认领 UUID → SmsManager → `SmsSentResultReceiver` 汇总真实发送回调 → 回 `SEND_CMD_RESULT` → 发起端更新 status。认领后回调缺失不可自动重发。
 
 ---
@@ -76,6 +76,8 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C8 | 所有源文件必须 UTF-8 无 BOM、LF 行尾 | 曾发生过 GBK 被误读为 UTF-8 后写回导致的中文乱码事故（4 处，已在 V2.0 修复） |
 | C9 | 新增 MQTT 动作时，需在 `handleIncomingMessage` 中按正确的顺序位置加分支，并对定向动作校验 `targetDeviceId == localDeviceId` | 顺序错会导致消息被上游分支吞掉；缺校验会导致别的设备的回执被误处理 |
 | C10 | 发信链路必须以 `uuid` 贯穿，落库前用 `dao.checkUuidExists` 判重 | 否则重发/回声会产生重复会话记录；实际发信前还必须原子认领 send_commands，不可用 status=0 短信行代替执行记录 |
+| C11 | 新增"必须送达对端"的云端发布点时，走 `SyncOutbox`（先落 `sync_outbox` 再由服务冲刷），不要直接 `globalMqttClient.publish` | 直接发布在断连时静默丢失。心跳 / PING / PONG 这类可丢的状态消息例外，可以直发 |
+| C12 | MQTT 必须保持 clientId = `dSIM_<deviceId>`、`cleanSession=false`、文件持久化 | Broker 端为离线设备排队 QoS1 消息依赖持久会话；改成随机 clientId 或 cleanSession=true 会让对端离线期间的短信全部丢失 |
 
 ---
 
@@ -102,8 +104,9 @@ dSIM/
         │   │   ├── database/
         │   │   │   ├── DsimEntities.kt           5 个 @Entity
         │   │   │   ├── DsimDao.kt                40 个 DAO 方法
-        │   │   │   └── DsimDatabase.kt           v6 + 5 次 Migration
-        │   │   ├── MqttSyncService.kt            ★ 协议中枢（发送执行已抽出）
+        │   │   │   └── DsimDatabase.kt           v7 + 6 次 Migration
+        │   │   ├── MqttSyncService.kt            ★ 协议中枢（发送执行已抽出；持久会话；冲刷发件箱）
+        │   │   ├── SyncOutbox.kt                 ★ 入站同步发件箱：事务入队 + 单飞冲刷
         │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
         │   │   ├── SmsSentResultReceiver.kt     系统发送回调
         │   │   ├── SendCommandPolicy.kt         分段状态纯逻辑
@@ -191,7 +194,8 @@ dSIM/
 
 | 要做的事 | 需要动的地方 |
 |---|---|
-| 给短信加字段 | `DsimEntities.kt` → 递增 `DsimDatabase` 版本 + 新增 `Migration` → 检查所有 `SmsMessage(...)` 构造点与 `SystemSmsHistoryImporter` 的字段映射 |
+| 给短信加字段 | `DsimEntities.kt` → 递增 `DsimDatabase` 版本 + 新增 `Migration` → 检查所有 `SmsMessage(...)` 构造点与 `SystemSmsHistoryImporter` 的字段映射 → 迁移测试里把假版本号链到最新版（`SendCommandLedgerTest` / `SyncOutboxDaoTest` 的写法） |
+| 加一种"必须送达"的云端消息 | 加 `SyncOutbox.KIND_*` → 构造 `SyncOutboxEntry` 入队 → 由现有 `flush` 发送；对端解析仍在 `handleIncomingMessage` |
 | 加一种云端消息 | `MqttSyncService` 加 `MQTT_ACTION_*` 常量 → `handleIncomingMessage` 按顺序插分支 → 对应 `handle*` 函数 → 若要回执，补 `targetDeviceId` 校验 |
 | 加一个设置项 | `SettingsActivity`（含 `insertUsageModeSection` 附近）→ 若需持久化，优先落在既有 prefs 文件而非新建 → 同步更新架构文档 §5 与 §12.2 |
 | 改通知文案 | `MqttSyncService.buildXxxMessage()` 与 `NotificationUtils` |

@@ -13,9 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SimCardConfig::class,
         DeviceProfile::class,
         DeviceHistoryRecord::class,
-        SendCommandRecord::class
+        SendCommandRecord::class,
+        SyncOutboxEntry::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class DsimDatabase : RoomDatabase() {
@@ -214,6 +215,29 @@ abstract class DsimDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `sync_outbox` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `uuid` TEXT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `payloadJson` TEXT NOT NULL,
+                        `groupFingerprint` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `attempts` INTEGER NOT NULL,
+                        `lastError` TEXT
+                    )
+                """.trimIndent())
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_outbox_uuid` ON `sync_outbox` (`uuid`)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_sync_outbox_createdAt` ON `sync_outbox` (`createdAt`)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): DsimDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE?.let { return@synchronized it }
@@ -227,7 +251,8 @@ abstract class DsimDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                     )
                     .build()
                 INSTANCE = instance

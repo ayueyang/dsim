@@ -5,10 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.dsim.database.DsimDatabase
-import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
-import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,7 +70,8 @@ open class SmsReceiver : BroadcastReceiver() {
                     mappingKey = source.mappingKey
                 )
 
-                dao.insertMessage(newSms)
+                // Message + outbox row in one transaction; the receiver never talks to the broker.
+                val enqueued = SyncOutbox.storeIncomingSms(context, newSms, source.sourcePhoneNumber)
                 SystemSmsStore.insertIncomingIfNeeded(
                     context = context,
                     address = cleanAddress,
@@ -80,7 +80,9 @@ open class SmsReceiver : BroadcastReceiver() {
                     subscriptionId = newSms.simId.takeIf { it >= 0 }
                 )
                 NotificationUtils.showNewMessageNotification(context, newSms, receivingPhone)
-                publishIncomingSmsToCloud(context, newSms, source.sourcePhoneNumber)
+                if (enqueued) {
+                    requestOutboxFlush(context)
+                }
 
                 Log.d(
                     "dSIM_Receiver",
@@ -118,42 +120,19 @@ open class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun publishIncomingSmsToCloud(
-        context: Context,
-        sms: SmsMessage,
-        sourcePhoneNumber: String
-    ) {
-        if (!UsageModeManager.canUploadIncomingSms(context)) {
-            return
-        }
-        val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-        val password = prefs.getString("PASSWORD", "") ?: ""
-        val topic = prefs.getString("TOPIC", "") ?: ""
-        val client = MqttSyncService.globalMqttClient
-
-        if (client == null || !client.isConnected || password.isBlank() || topic.isBlank()) {
-            return
-        }
-
+    /** Ask the sync service to drain the outbox. Safe when the service is already running. */
+    private fun requestOutboxFlush(context: Context) {
+        if (!UsageModeManager.canUseCloud(context)) return
         try {
-            val payload = SyncPayload(
-                sms = sms,
-                remarkPhone = sourcePhoneNumber,
-                deviceName = DeviceNameManager.getDisplayName(context)
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, MqttSyncService::class.java).apply {
+                    action = MqttSyncService.ACTION_FLUSH_OUTBOX
+                }
             )
-            val encrypted = DsimCryptoUtils.encryptMessage(Gson().toJson(payload), password)
-            if (encrypted == "ENCRYPTION_ERROR") {
-                return
-            }
-
-            val mqttMessage = org.eclipse.paho.client.mqttv3.MqttMessage(
-                encrypted.toByteArray(Charsets.UTF_8)
-            ).apply {
-                qos = 1
-            }
-            client.publish(topic, mqttMessage)
         } catch (e: Exception) {
-            Log.e("dSIM_Receiver", "Failed to forward incoming SMS to cloud", e)
+            // Row is durable; the next connectComplete/heartbeat will pick it up.
+            Log.w("dSIM_Receiver", "Could not start sync service for outbox flush", e)
         }
     }
 }
