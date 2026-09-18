@@ -53,7 +53,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 能力   SmsSourceResolver / PrivacyModeManager / OtpRulesStore / UsageModeManager
        SenderColorUtils / ConversationProfileStore / DeviceDirectoryManager
 同步   MqttSyncService(前台服务·协议中枢) / HistorySyncQueueManager / DsimCryptoUtils
-       CloudTopics(topic 布局) / HeartbeatPolicy(快照发布决策) / SyncOutbox(发件箱)
+       CloudTopics(topic 布局) / HeartbeatPolicy(快照发布决策) / ReconnectPolicy(重连退避) / SyncOutbox(发件箱)
 采集   SmsReceiver(+SmsReceivedReceiver) / SystemSmsHistoryImporter / HardwareProbeUtils
 数据   Room DsimDatabase v7 (6 实体：send_commands 执行账本、sync_outbox 同步发件箱) + 9 组 SharedPreferences
 ```
@@ -87,6 +87,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C17 | 房间号（base topic）在保存入口必须过 `CloudSettingsManager.validateBaseTopic`，云端凭据一律经 `CloudSettingsManager` 读写 | base topic 含 `+`/`#` 会让 C13 的 `<base>/<deviceId>` 变成非法发布目标、`<base>/+` 变成过宽订阅。直接 `getSharedPreferences("dSIM_UI_PREFS")` 读 BROKER/TOPIC/PASSWORD 会绕过校验与默认值，也挡死后续迁移到加密存储 |
 | C18 | MQTT 载荷只经 `MqttProtocol.kt` 的数据类 + `MqttPayloadCodec` 编解码；不得再手工拼 `JSONObject` 或读 `optString("action")`。字段名即线格式，改名 = 改协议，须与所有设备同步升级 | 字段名散落各处时拼错没有编译期检查；`decode()` 对未知 action / 缺失 `sms` 返回 `null` 而不是抛异常，新增消息类型必须同时加 `sealed` 子类、`decode` 分支与 `senderId` 分支（`when` 穷举会在编译期提醒） |
 | C19 | `MqttSyncService` 的前台服务类型是 `remoteMessaging`（清单 + `startForeground(id, n, FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)` 二者必须一致），不可改回 `dataSync`；`startForeground` 只经 `promoteToForeground()`，被系统拒绝时 `stopSelf` 而不是让异常杀进程 | Android 15+（targetSdk 35+）禁止 `BOOT_COMPLETED` 拉起 `dataSync` 前台服务，改回去 = 开机自启崩溃、守护进程直到用户开 app 才起来；`dataSync` 另有 6 h/24 h 时长预算，常驻守护会被 `onTimeout` 掐掉。`SystemHistoryImportService` 是用户发起、有界的导入，保持 `dataSync` |
+| C20 | 重连由 `MqttSyncService` 自己负责：`setAutomaticReconnect(false)` 不可改回 true；`connectionLost` 与连接失败只能经 `scheduleReconnect()`（`ReconnectPolicy` 5 s 起倍增、封顶 5 min，单一 job），网络恢复经 `registerDefaultNetworkCallback` 立即重试；重建客户端前必须 `setCallback(null)` + `disconnectForcibly` + `close(true)` 旧实例 | Paho 的自动重连只覆盖「连上过之后断线」，首连失败永远不重试；而且它在后台重连时我们再 `close()`/新建同 clientId 客户端会互相踢，结果是「一次连接失败然后沉默」（批次 E 观察到的缺陷）。两套重连并存必然竞态，只能留一套 |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---

@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
@@ -38,6 +40,10 @@ class MqttSyncService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var snapshotHeartbeatJob: Job? = null
     private val connectMutex = Mutex()
+    private var reconnectJob: Job? = null
+    /** Consecutive failed connect attempts since the last successful subscribe. */
+    private var reconnectAttempts = 0
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val session = CloudSession()
     private val publisher = MqttPublisher(this, session) { globalMqttClient }
@@ -183,6 +189,72 @@ class MqttSyncService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
+        registerNetworkCallback()
+    }
+
+    /**
+     * A network coming back is the one event worth reacting to immediately instead of waiting out
+     * the backoff: reset the counter and try now. Paho's own reconnect is disabled (see
+     * [connectAndSubscribe]); this callback plus [scheduleReconnect] replace it.
+     */
+    private fun registerNetworkCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (globalMqttClient?.isConnected == true) return
+                if (!reconnectAllowed()) return
+                Log.d("dSIM_SyncService", "network available -> reconnect now")
+                reconnectAttempts = 0
+                scheduleReconnect("network", immediate = true)
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            Log.w("dSIM_SyncService", "registerDefaultNetworkCallback failed; backoff timer only", e)
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try {
+            (getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.unregisterNetworkCallback(cb)
+        } catch (e: Exception) {
+            Log.d("dSIM_SyncService", "unregisterNetworkCallback: ${e.message}")
+        }
+    }
+
+    private fun reconnectAllowed(): Boolean = ReconnectPolicy.shouldReconnect(
+        cloudEnabled = UsageModeManager.canUseCloud(this),
+        manualDisconnect = manualDisconnectInCurrentSession,
+        autoReconnectEnabled = CloudSettingsManager.isAutoReconnectEnabled(this),
+        configComplete = session.topic.isNotBlank() && session.password.isNotBlank() && session.broker.isNotBlank()
+    )
+
+    /**
+     * Single reconnect timer. A new request replaces the pending one, so a burst of
+     * connectionLost / flush / network events collapses into one attempt.
+     */
+    private fun scheduleReconnect(reason: String, immediate: Boolean = false) {
+        if (!reconnectAllowed()) return
+        reconnectJob?.cancel()
+        val attempt = reconnectAttempts + 1
+        val delayMs = if (immediate) 0L else ReconnectPolicy.delayForAttempt(attempt)
+        Log.d("dSIM_SyncService", "reconnect scheduled reason=$reason attempt=$attempt in ${delayMs}ms")
+        reconnectJob = serviceScope.launch {
+            delay(delayMs)
+            if (globalMqttClient?.isConnected == true || !reconnectAllowed()) return@launch
+            connectAndSubscribe()
+        }
+    }
+
+    private fun cancelReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempts = 0
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -199,6 +271,7 @@ class MqttSyncService : Service() {
 
         if (action == ACTION_APPLY_LOCAL_MODE) {
             manualDisconnectInCurrentSession = false
+            cancelReconnect()
             stopSnapshotHeartbeat()
             publisher.publishOfflineBestEffort()
             try {
@@ -250,6 +323,7 @@ class MqttSyncService : Service() {
 
         if (action == ACTION_DISCONNECT) {
             manualDisconnectInCurrentSession = true
+            cancelReconnect()
             stopSnapshotHeartbeat()
             publisher.publishOfflineBestEffort()
             try {
@@ -264,6 +338,7 @@ class MqttSyncService : Service() {
 
         if (action == ACTION_CONNECT) {
             manualDisconnectInCurrentSession = false
+            reconnectAttempts = 0
         }
 
         // A flush request while disconnected behaves like a daemon (re)start: it honours the
@@ -330,6 +405,8 @@ class MqttSyncService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterNetworkCallback()
+        reconnectJob = null
         serviceScope.cancel()
         staticConfig = null
         connectionStateFlow.value = false
@@ -425,22 +502,37 @@ class MqttSyncService : Service() {
                 return@withLock
             }
 
-            try {
-                globalMqttClient?.close()
-            } catch (e: Exception) {
-                Log.d("dSIM_SyncService", "stale client close before reconnect: ${e.message}")
+            // Release the previous client fully (socket + persistence lock) before building a new
+            // one with the same clientId; a half-closed client would make the next connect fail.
+            globalMqttClient?.let { stale ->
+                globalMqttClient = null
+                try {
+                    stale.setCallback(null)
+                    if (stale.isConnected) stale.disconnectForcibly(1_000L) else runCatching { stale.disconnectForcibly(0L) }
+                } catch (e: Exception) {
+                    Log.d("dSIM_SyncService", "stale client disconnect: ${e.message}")
+                }
+                try {
+                    stale.close(true)
+                } catch (e: Exception) {
+                    Log.d("dSIM_SyncService", "stale client close: ${e.message}")
+                }
             }
 
             val persistenceDir = File(filesDir, "mqtt").apply { mkdirs() }
-            globalMqttClient = MqttClient(session.broker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
             val autoReconnectEnabled = CloudSettingsManager.isAutoReconnectEnabled(this)
+            val client = MqttClient(session.broker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
+            globalMqttClient = client
             val publishTopic = CloudTopics.publishTopic(session.topic, deviceId)
             val subscribeFilter = CloudTopics.subscriptionFilter(session.topic)
             val options = MqttConnectOptions().apply {
                 isCleanSession = false
                 connectionTimeout = 15
                 keepAliveInterval = 30
-                setAutomaticReconnect(autoReconnectEnabled)
+                // Reconnection is owned by the service (scheduleReconnect + network callback), not
+                // Paho: Paho's timer never covers a failed first connect and races with our own
+                // client rebuilds. The user switch still gates it via reconnectAllowed().
+                setAutomaticReconnect(false)
                 // Last Will: broker announces us OFFLINE if the TCP session dies without a DISCONNECT.
                 // Encrypted with the (cached) group key so peers treat it like any other message.
                 val will = DsimCryptoUtils.encryptOrNull(publisher.buildOfflineJson(deviceId), session.password)
@@ -449,10 +541,13 @@ class MqttSyncService : Service() {
                 }
             }
 
-            globalMqttClient?.setCallback(object : MqttCallbackExtended {
+            client.setCallback(object : MqttCallbackExtended {
                 override fun connectionLost(cause: Throwable?) {
+                    if (globalMqttClient !== client) return // superseded client; ignore
+                    Log.w("dSIM_SyncService", "connection lost: ${cause?.message}")
                     connectionStateFlow.value = false
                     stopSnapshotHeartbeat()
+                    scheduleReconnect("connectionLost")
                     val message = when {
                         UsageModeManager.isLocalOnly(this@MqttSyncService) -> buildLocalModeMessage()
                         manualDisconnectInCurrentSession -> buildManualDisconnectMessage()
@@ -463,12 +558,14 @@ class MqttSyncService : Service() {
                 }
 
                 override fun connectComplete(reconnect: Boolean, serverURI: String?) {
+                    if (globalMqttClient !== client) return
                     connectionStateFlow.value = true
                     startSnapshotHeartbeat()
                     if (reconnect) {
+                        // Only reachable if Paho ever reconnects on its own; kept for safety.
                         updateNotification("云端状态：已恢复连接，守护进程常驻中")
                         try {
-                            globalMqttClient?.subscribe(subscribeFilter, 1)
+                            client.subscribe(subscribeFilter, 1)
                             serviceScope.launch {
                                 flushOutbox("reconnect")
                                 publisher.publishPing()
@@ -497,19 +594,22 @@ class MqttSyncService : Service() {
                 }
             })
 
-            globalMqttClient?.connect(options)
+            client.connect(options)
             if (!UsageModeManager.canUseCloud(this@MqttSyncService) ||
                 manualDisconnectInCurrentSession || serviceScope.coroutineContext[Job]?.isActive != true) {
-                globalMqttClient?.disconnect()
-                globalMqttClient?.close()
+                client.disconnect()
+                client.close()
                 globalMqttClient = null
                 staticConfig = null
                 connectionStateFlow.value = false
                 return@withLock
             }
-            globalMqttClient?.subscribe(subscribeFilter, 1)
-            Log.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic")
+            client.subscribe(subscribeFilter, 1)
+            Log.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic" +
+                if (reconnectAttempts > 0) " (after $reconnectAttempts failed attempts)" else "")
 
+            reconnectAttempts = 0
+            reconnectJob = null
             staticConfig = session.config()
             publisher.resetHeartbeat()
             connectionStateFlow.value = true
@@ -523,8 +623,15 @@ class MqttSyncService : Service() {
             throw e
         } catch (e: Exception) {
             connectionStateFlow.value = false
-            updateNotification("云端状态：连接失败，请检查网络或 Broker")
-            Log.e("dSIM_SyncService", "连接失败", e)
+            reconnectAttempts += 1
+            Log.e("dSIM_SyncService", "连接失败 (attempt $reconnectAttempts)", e)
+            if (reconnectAllowed()) {
+                val next = ReconnectPolicy.delayForAttempt(reconnectAttempts + 1) / 1000
+                updateNotification("云端状态：连接失败，${next} 秒后自动重试")
+                scheduleReconnect("connectFailed")
+            } else {
+                updateNotification("云端状态：连接失败，请检查网络或 Broker")
+            }
         }
     }
 

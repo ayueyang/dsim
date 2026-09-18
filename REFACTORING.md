@@ -44,7 +44,7 @@
 | 哨兵字符串比较 | 0（W5 前 11 处） | `encryptOrNull()` 返回可空，哨兵已删 |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
-| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
+| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
 ---
@@ -56,7 +56,7 @@
 | W1 | ~~P0~~ **P2**（已降级） | 补齐默认短信应用的三个必备组件 | M | — |
 | W2 | **P0** | `deviceId` 改为应用自管持久标识 | S | — |
 | W3 | **P0** | 历史同步状态机与文案解耦 | S | — |
-| W4 | P1 | 拆分 `MqttSyncService` — 第 1 步 ✅（批次 E：入站/出站抽出，1102 → 568 行）；第 2 步（连接管理）待 W7 一起 | L | — |
+| W4 | P1 | 拆分 `MqttSyncService` — 第 1 步 ✅（批次 E：入站/出站抽出，1102 → 568 行）；第 2 步 ✅（批次 F2：重连状态收口到服务 `scheduleReconnect` + `ReconnectPolicy` + 网络回调，AGENTS C20）；独立 `ConnectionManager` 类暂不抽，等第 3 步有真实需求再做 | L | — |
 | W5 | P1 | ✅ 协议消息数据类化 + 去哨兵字符串（批次 E） | M | — |
 | W6 | P1 | ✅ 错误处理与可观测性（批次 E：静默 catch 清零、outbox 失败原因进通知） | M | — |
 | W7 | P1 | ✅（批次 E） 并发与生命周期治理 | S/M | 与 W4 绑定 |

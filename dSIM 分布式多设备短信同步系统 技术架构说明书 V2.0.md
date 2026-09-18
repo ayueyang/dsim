@@ -893,6 +893,7 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 
 | # | 风险 | 说明 |
 |---|---|---|
+| R1b | 断网后不重连 | 已修（批次 F2）：服务自管指数退避 + 网络恢复立即重试，见 AGENTS C20；真机运营商网络切换仍需实测 |
 | R1 | 守护进程被系统回收 | 依赖前台服务 + `START_STICKY` + 开机广播。在国产 ROM 的省电策略下仍可能被清理，需用户手动加入白名单 |
 | R2 | 去重时间窗 | 系统库与应用库去重均依赖 ±2 分钟窗口。若同一条短信在窗口外被重复导入，会产生重复记录 |
 | R3 | 状态迁移依赖文案匹配 | `HistorySyncQueueManager` 通过"阶段文案是否含『完成』/『失败』"判断终态，对文案改动敏感，属脆弱设计 |
@@ -1031,6 +1032,7 @@ dSIM/
 | `appSalt` | `"dSIM/v3/master-key"`（固定） | DsimCryptoUtils |
 | `KEY_CACHE_LIMIT` | 4 个口令 | DsimCryptoUtils |
 | `HeartbeatPolicy.TICK_MS` / `MAX_SILENCE_MS` | 30,000 / 120,000 毫秒 | HeartbeatPolicy |
+| `ReconnectPolicy.BASE_DELAY_MS` / `MAX_DELAY_MS` | 5,000 / 300,000 毫秒 | ReconnectPolicy（服务自管重连退避；Paho automaticReconnect 关闭） |
 | `AEAD_IV_SIZE` | 12 字节 | DsimCryptoUtils |
 | `AEAD_TAG_BITS` | 128 | DsimCryptoUtils |
 | `AEAD_KEY_BITS` | 256 | DsimCryptoUtils |
