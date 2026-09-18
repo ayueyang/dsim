@@ -41,3 +41,4 @@ garbage ignored, OFFLINE handled, inbound SMS still syncs.
 - [x] S7 c8check + diff --check + review + local commit (no push)
 - [x] S8 W5 codec + migrate producers/receiver + tests
 - [x] S9 W5 build (debug+release) + emulator probe + docs (C18) + commit
+- [x] S10 W4 step 1: CloudSession + MqttPublisher + MqttInboundHandler; build + probe + docs + commit

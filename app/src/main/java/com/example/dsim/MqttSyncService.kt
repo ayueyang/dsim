@@ -12,8 +12,6 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.example.dsim.database.DsimDatabase
-import com.example.dsim.database.SimCardConfig
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -40,11 +38,10 @@ class MqttSyncService : Service() {
     private var snapshotHeartbeatJob: Job? = null
     private val connectMutex = Mutex()
 
-    private var currentBroker: String = ""
-    private var currentTopic: String = ""
-    private var currentPassword: String = ""
+    private val session = CloudSession()
+    private val publisher = MqttPublisher(this, session)
+    private val inbound = MqttInboundHandler(this, session, publisher)
     private var lastNotificationContent: String = "云端状态：正在启动守护服务"
-    private var heartbeatState = HeartbeatPolicy.State()
 
     private data class CloudNotificationCopy(
         val title: String,
@@ -141,7 +138,7 @@ class MqttSyncService : Service() {
             historyImportAckWaiters.remove(uuid)
         }
 
-        private fun resolveHistoryImportAck(ack: HistorySyncAck) {
+        internal fun resolveHistoryImportAck(ack: HistorySyncAck) {
             historyImportAckWaiters.remove(ack.uuid)?.complete(ack)
         }
     }
@@ -176,7 +173,7 @@ class MqttSyncService : Service() {
         if (action == ACTION_APPLY_LOCAL_MODE) {
             manualDisconnectInCurrentSession = false
             stopSnapshotHeartbeat()
-            publishOfflineBestEffort()
+            publisher.publishOfflineBestEffort()
             try {
                 globalMqttClient?.disconnect()
                 globalMqttClient?.close()
@@ -231,11 +228,11 @@ class MqttSyncService : Service() {
         }
 
         if (action == ACTION_BROADCAST_DEVICE_PROFILE) {
-            currentTopic = intent.getStringExtra("MQTT_TOPIC") ?: currentTopic
-            currentPassword = intent.getStringExtra("MQTT_PASSWORD") ?: currentPassword
-            currentBroker = intent.getStringExtra("MQTT_BROKER") ?: currentBroker
+            session.topic = intent.getStringExtra("MQTT_TOPIC") ?: session.topic
+            session.password = intent.getStringExtra("MQTT_PASSWORD") ?: session.password
+            session.broker = intent.getStringExtra("MQTT_BROKER") ?: session.broker
             serviceScope.launch {
-                publishDeviceSnapshot(force = true)
+                publisher.publishDeviceSnapshot(force = true)
             }
             return START_STICKY
         }
@@ -243,7 +240,7 @@ class MqttSyncService : Service() {
         if (action == ACTION_DISCONNECT) {
             manualDisconnectInCurrentSession = true
             stopSnapshotHeartbeat()
-            publishOfflineBestEffort()
+            publisher.publishOfflineBestEffort()
             try {
                 globalMqttClient?.disconnect()
             } catch (e: Exception) {
@@ -282,9 +279,9 @@ class MqttSyncService : Service() {
             return START_STICKY
         }
 
-        currentTopic = topic
-        currentPassword = password
-        currentBroker = broker
+        session.topic = topic
+        session.password = password
+        session.broker = broker
 
         if (daemonLikeAction || action == null) {
             when {
@@ -326,7 +323,7 @@ class MqttSyncService : Service() {
         staticConfig = null
         connectionStateFlow.value = false
         stopSnapshotHeartbeat()
-        publishOfflineBestEffort()
+        publisher.publishOfflineBestEffort()
         try {
             globalMqttClient?.disconnect()
             globalMqttClient?.close()
@@ -341,7 +338,7 @@ class MqttSyncService : Service() {
      * rows remain so the user can see that capture succeeded but upload is still pending.
      */
     private suspend fun flushOutbox(trigger: String) {
-        val config = staticConfig ?: CloudSettingsManager.CloudConfig(currentBroker, currentTopic, currentPassword)
+        val config = staticConfig ?: session.config()
         if (config.topic.isBlank() || config.password.isBlank()) return
         try {
             val result = SyncOutbox.flush(this, globalMqttClient, config)
@@ -375,13 +372,13 @@ class MqttSyncService : Service() {
         snapshotHeartbeatJob = serviceScope.launch {
             while (true) {
                 delay(HeartbeatPolicy.TICK_MS)
-                if (globalMqttClient?.isConnected != true || currentTopic.isBlank() || currentPassword.isBlank()) {
+                if (globalMqttClient?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
                     continue
                 }
                 try {
                     flushOutbox("heartbeat")
                     // Only publishes when something peers render changed, or every MAX_SILENCE_MS.
-                    publishDeviceSnapshot(force = false)
+                    publisher.publishDeviceSnapshot(force = false)
                 } catch (e: Exception) {
                     Log.e("dSIM_SyncService", "定时广播设备快照失败", e)
                 }
@@ -417,10 +414,10 @@ class MqttSyncService : Service() {
             }
 
             val persistenceDir = File(filesDir, "mqtt").apply { mkdirs() }
-            globalMqttClient = MqttClient(currentBroker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
+            globalMqttClient = MqttClient(session.broker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
             val autoReconnectEnabled = CloudSettingsManager.isAutoReconnectEnabled(this)
-            val publishTopic = CloudTopics.publishTopic(currentTopic, deviceId)
-            val subscribeFilter = CloudTopics.subscriptionFilter(currentTopic)
+            val publishTopic = CloudTopics.publishTopic(session.topic, deviceId)
+            val subscribeFilter = CloudTopics.subscriptionFilter(session.topic)
             val options = MqttConnectOptions().apply {
                 isCleanSession = false
                 connectionTimeout = 15
@@ -428,7 +425,7 @@ class MqttSyncService : Service() {
                 setAutomaticReconnect(autoReconnectEnabled)
                 // Last Will: broker announces us OFFLINE if the TCP session dies without a DISCONNECT.
                 // Encrypted with the (cached) group key so peers treat it like any other message.
-                val will = DsimCryptoUtils.encryptOrNull(buildOfflineJson(deviceId), currentPassword)
+                val will = DsimCryptoUtils.encryptOrNull(publisher.buildOfflineJson(deviceId), session.password)
                 if (will != null) {
                     setWill(publishTopic, will.toByteArray(Charsets.UTF_8), 1, false)
                 }
@@ -456,8 +453,8 @@ class MqttSyncService : Service() {
                             globalMqttClient?.subscribe(subscribeFilter, 1)
                             serviceScope.launch {
                                 flushOutbox("reconnect")
-                                publishPing()
-                                publishDeviceSnapshot(force = true)
+                                publisher.publishPing()
+                                publisher.publishDeviceSnapshot(force = true)
                             }
                         } catch (e: Exception) {
                             Log.e("dSIM_SyncService", "重连订阅失败", e)
@@ -471,13 +468,13 @@ class MqttSyncService : Service() {
                     val encryptedBase64 = message?.toString() ?: return
                     // Our own publications come back through the wildcard subscription. The sender
                     // is in the topic, so drop them here without spending a decrypt.
-                    if (CloudTopics.isOwnEcho(currentTopic, topic, deviceId)) {
+                    if (CloudTopics.isOwnEcho(session.topic, topic, deviceId)) {
                         Log.d("dSIM_SyncService", "skip own echo on $topic")
                         return
                     }
-                    val senderFromTopic = CloudTopics.senderOf(currentTopic, topic)
+                    val senderFromTopic = CloudTopics.senderOf(session.topic, topic)
                     serviceScope.launch {
-                        handleIncomingMessage(encryptedBase64, senderFromTopic)
+                        inbound.handleIncomingMessage(encryptedBase64, senderFromTopic)
                     }
                 }
             })
@@ -494,16 +491,16 @@ class MqttSyncService : Service() {
             globalMqttClient?.subscribe(subscribeFilter, 1)
             Log.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic")
 
-            staticConfig = CloudSettingsManager.CloudConfig(currentBroker, currentTopic, currentPassword)
-            staticTopic = currentTopic
-            heartbeatState = HeartbeatPolicy.State()
+            staticConfig = session.config()
+            staticTopic = session.topic
+            publisher.resetHeartbeat()
             connectionStateFlow.value = true
             startSnapshotHeartbeat()
 
             updateNotification("云端状态：已连接，守护进程常驻中")
             flushOutbox("connect")
-            publishPing()
-            publishDeviceSnapshot(force = true)
+            publisher.publishPing()
+            publisher.publishDeviceSnapshot(force = true)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -511,540 +508,6 @@ class MqttSyncService : Service() {
             updateNotification("云端状态：连接失败，请检查网络或 Broker")
             Log.e("dSIM_SyncService", "连接失败", e)
         }
-    }
-
-    private suspend fun handleIncomingMessage(encryptedBase64: String, senderFromTopic: String?) {
-        if (!UsageModeManager.canUseCloud(this)) return
-
-        try {
-            val decryptedJson = DsimCryptoUtils.decryptMessage(encryptedBase64, currentPassword)
-                ?: return
-
-            val inbound = MqttPayloadCodec.decode(decryptedJson)
-            if (inbound == null) {
-                Log.w("dSIM_SyncService", "忽略无法识别的云端消息: ${decryptedJson.take(200)}")
-                return
-            }
-            val senderId = MqttPayloadCodec.senderId(inbound).ifBlank { senderFromTopic.orEmpty() }
-            val localDeviceId = HardwareProbeUtils.getDeviceId(this@MqttSyncService)
-            // Defence in depth: the topic-level echo filter runs before decrypt, but a payload whose
-            // deviceId claims to be us (replay onto a foreign sub-topic) must still be ignored.
-            // SEND_CMD / SEND_CMD_RESULT are exempt: their deviceId is the requester / executor, and
-            // a device may legitimately be both ends when it owns the SIM it asked for.
-            if (senderId == localDeviceId && inbound !is SendCmd && inbound !is SendCmdResult) return
-
-            val payload: SyncPayload = when (inbound) {
-                is Offline -> {
-                    if (senderId.isNotBlank() && senderId != localDeviceId) {
-                        Log.d("dSIM_SyncService", "peer OFFLINE: $senderId")
-                        DeviceDirectoryManager.markOffline(this@MqttSyncService, senderId)
-                        HistoryQueueNotificationHelper.refresh(this@MqttSyncService)
-                    }
-                    return
-                }
-                is HistorySyncAckMsg -> {
-                    handleHistorySyncAck(inbound, localDeviceId)
-                    return
-                }
-                is HistoryQueueBatch -> {
-                    handleHistoryQueueBatch(inbound)
-                    return
-                }
-                is Ping -> {
-                    // A peer explicitly asked; answer even if nothing changed.
-                    if (senderId != localDeviceId) publishDeviceSnapshot(force = true)
-                    return
-                }
-                is Pong -> {
-                    if (senderId != localDeviceId) {
-                        DeviceDirectoryManager.saveRemoteSnapshot(this@MqttSyncService, inbound)
-                        HistoryQueueNotificationHelper.refresh(this@MqttSyncService)
-                        syncRemoteSimsFromPong(inbound)
-                        HistorySyncQueueManager.evaluateAndMaybeStartLocal(this@MqttSyncService)
-                        radarEventFlow.emit(decryptedJson)
-                    }
-                    return
-                }
-                is SendCmdResult -> {
-                    handleSendCommandResult(inbound, localDeviceId)
-                    return
-                }
-                is SendCmd -> {
-                    handleSendCommand(inbound)
-                    return
-                }
-                is SmsSync -> inbound.payload
-            }
-
-            val sms = payload.sms
-            if (sms.deviceId == localDeviceId) {
-                return
-            }
-
-            if (!UsageModeManager.canReceiveCloudSms(this@MqttSyncService)) {
-                if (payload.historyImport) {
-                    publishHistorySyncAck(
-                        uuid = sms.uuid,
-                        targetDeviceId = sms.deviceId,
-                        success = true,
-                        message = "ignored_by_mode"
-                    )
-                }
-                return
-            }
-
-            val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
-            if (dao.checkUuidExists(sms.uuid) > 0) {
-                dao.updateMessageStatus(sms.uuid, sms.status, sms.errorMsg)
-                if (payload.historyImport) {
-                    publishHistorySyncAck(
-                        uuid = sms.uuid,
-                        targetDeviceId = sms.deviceId,
-                        success = true,
-                        message = "already_exists"
-                    )
-                }
-                return
-            }
-
-            val existingConfig = dao.getSimConfigByKey(sms.mappingKey)
-            if (existingConfig == null || existingConfig.bindMode == "REMOTE_SHADOW") {
-                val sourcePhone = payload.remarkPhone.trim()
-                PrivacyModeManager.rememberOwnPhone(this@MqttSyncService, sourcePhone)
-                dao.saveSimConfig(
-                    buildRemoteShadowConfig(
-                        mappingKey = sms.mappingKey,
-                        phoneNumber = sourcePhone,
-                        alias = payload.deviceName,
-                        remoteDeviceId = sms.deviceId,
-                        subscriptionId = HardwareProbeUtils.parseSubscriptionIdFromMappingKey(sms.mappingKey),
-                        slotIndex = HardwareProbeUtils.parseSlotIndexFromMappingKey(sms.mappingKey),
-                        existingConfig = existingConfig,
-                        isActive = sourcePhone.isNotBlank() || existingConfig?.isActive == true
-                    )
-                )
-            }
-
-            val safeSms = sms.copy(id = 0L)
-            dao.insertMessage(safeSms)
-            if (payload.historyImport) {
-                publishHistorySyncAck(
-                    uuid = sms.uuid,
-                    targetDeviceId = sms.deviceId,
-                    success = true,
-                    message = null
-                )
-            }
-            if (!payload.silentSync) {
-                NotificationUtils.showNewMessageNotification(
-                    this@MqttSyncService,
-                    safeSms,
-                    payload.remarkPhone
-                )
-            }
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "处理云端消息失败", e)
-        }
-    }
-
-    private fun handleHistorySyncAck(ack: HistorySyncAckMsg, localDeviceId: String) {
-        if (ack.targetDeviceId.isBlank() || ack.targetDeviceId != localDeviceId) {
-            return
-        }
-        if (ack.uuid.isBlank()) {
-            return
-        }
-
-        resolveHistoryImportAck(
-            HistorySyncAck(
-                uuid = ack.uuid,
-                success = ack.success,
-                deviceId = ack.deviceId,
-                deviceName = ack.deviceName?.takeIf { it.isNotBlank() },
-                message = ack.message?.takeIf { it.isNotBlank() }
-            )
-        )
-    }
-
-    private fun publishHistorySyncAck(
-        uuid: String,
-        targetDeviceId: String,
-        success: Boolean,
-        message: String?
-    ) {
-        if (
-            globalMqttClient?.isConnected != true ||
-            currentTopic.isBlank() ||
-            currentPassword.isBlank()
-        ) {
-            return
-        }
-
-        try {
-            val ackJson = MqttPayloadCodec.encode(
-                HistorySyncAckMsg(
-                    uuid = uuid,
-                    targetDeviceId = targetDeviceId,
-                    deviceId = HardwareProbeUtils.getDeviceId(this@MqttSyncService),
-                    deviceName = DeviceNameManager.getDisplayName(this@MqttSyncService),
-                    success = success,
-                    message = message?.takeIf { it.isNotBlank() }?.take(120)
-                )
-            )
-
-            val encryptedAck = DsimCryptoUtils.encryptOrNull(ackJson, currentPassword) ?: return
-
-            val ackMessage = MqttMessage(encryptedAck.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            globalMqttClient?.publish(localPublishTopic(), ackMessage)
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送历史同步回执失败", e)
-        }
-    }
-
-    private suspend fun handleHistoryQueueBatch(batch: HistoryQueueBatch) {
-        val queueId = batch.queueId.trim()
-        val createdAt = if (batch.createdAt > 0L) batch.createdAt else System.currentTimeMillis()
-        val requestedByDeviceId = batch.requestedByDeviceId.trim()
-        val requestedByDeviceName = batch.requestedByDeviceName.trim()
-
-        val targets = batch.targets.mapIndexedNotNull { index, item ->
-            val deviceId = item.deviceId.trim()
-            if (deviceId.isBlank()) return@mapIndexedNotNull null
-            HistorySyncQueueManager.QueueTarget(
-                deviceId = deviceId,
-                deviceName = item.deviceName.trim(),
-                position = (if (item.position > 0) item.position else index + 1).coerceAtLeast(1)
-            )
-        }
-
-        if (targets.isEmpty()) {
-            return
-        }
-
-        HistorySyncQueueManager.handleQueueBatch(
-            context = this@MqttSyncService,
-            queueId = queueId,
-            createdAt = createdAt,
-            requestedByDeviceId = requestedByDeviceId,
-            requestedByDeviceName = requestedByDeviceName,
-            targets = targets
-        )
-        HistoryQueueNotificationHelper.refresh(this@MqttSyncService)
-        HistorySyncQueueManager.maybeBroadcastLocalSnapshot(this@MqttSyncService, force = true)
-    }
-
-    private suspend fun handleSendCommand(cmd: SendCmd) {
-        if (!UsageModeManager.canUseCloud(this)) return
-        val target = cmd.target
-        val body = cmd.body
-        val mappingKey = cmd.mappingKey
-        val uuid = cmd.uuid
-        val requester = cmd.deviceId
-        if (listOf(target, body, mappingKey, uuid, requester).any { it.isBlank() }) return
-        val dao = DsimDatabase.getDatabase(this).dsimDao()
-        val config = dao.getSimConfigByKey(mappingKey) ?: return
-        if (config.bindMode == "REMOTE_SHADOW") return
-        try {
-            OutgoingSmsDispatcher.submit(this, uuid, target, body, requester, config,
-                CloudSettingsManager.CloudConfig(currentBroker, currentTopic, currentPassword))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Dispatcher owns any durable claim. Never overwrite its result here.
-            if (dao.getSendCommand(uuid) == null) {
-                dao.updateMessageStatus(uuid, -1, e.message)
-                publishSendCommandResult(uuid, requester, false, e.message ?: "发送准备失败")
-            }
-            Log.e("dSIM_SyncService", "Failed to prepare send command", e)
-        }
-    }
-
-    private suspend fun handleSendCommandResult(result: SendCmdResult, localDeviceId: String) {
-        val targetDeviceId = result.targetDeviceId
-        if (targetDeviceId.isBlank() || targetDeviceId != localDeviceId) {
-            return
-        }
-
-        val uuid = result.uuid
-        if (uuid.isBlank()) {
-            return
-        }
-
-        val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
-        val sms = dao.getMessageByUuid(uuid) ?: return
-        if (sms.type != 2) return
-        val config = dao.getSimConfigByKey(sms.mappingKey) ?: return
-        val expectedExecutor = config.deviceId.ifBlank {
-            if (config.bindMode != "REMOTE_SHADOW") localDeviceId else ""
-        }
-        if (expectedExecutor.isBlank() || result.deviceId != expectedExecutor) return
-        // Late PENDING/UNKNOWN responses must not roll a final result back.
-        val state = result.state.orEmpty()
-        if (state in setOf(SendCommandPolicy.PENDING, SendCommandPolicy.UNKNOWN) && sms.status in listOf(1, -1)) return
-
-        val success = result.success
-        val message = result.message?.takeIf { it.isNotBlank() }
-        dao.updateMessageStatus(
-            uuid = uuid,
-            newStatus = when (state) {
-                SendCommandPolicy.PENDING -> 0
-                SendCommandPolicy.UNKNOWN -> -2
-                else -> if (success) 1 else -1
-            },
-            error = if (success) null else message
-        )
-    }
-
-    private fun publishSendCommandResult(
-        uuid: String,
-        targetDeviceId: String,
-        success: Boolean,
-        message: String?
-    ) {
-        if (
-            uuid.isBlank() ||
-            targetDeviceId.isBlank() ||
-            globalMqttClient?.isConnected != true ||
-            currentTopic.isBlank() ||
-            currentPassword.isBlank()
-        ) {
-            return
-        }
-
-        try {
-            val resultJson = MqttPayloadCodec.encode(
-                SendCmdResult(
-                    uuid = uuid,
-                    targetDeviceId = targetDeviceId,
-                    deviceId = HardwareProbeUtils.getDeviceId(this@MqttSyncService),
-                    deviceName = DeviceNameManager.getDisplayName(this@MqttSyncService),
-                    success = success,
-                    message = message?.takeIf { it.isNotBlank() }?.take(120),
-                    timestamp = System.currentTimeMillis()
-                )
-            )
-
-            val encryptedResult = DsimCryptoUtils.encryptOrNull(resultJson, currentPassword) ?: return
-
-            val resultMessage = MqttMessage(encryptedResult.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            globalMqttClient?.publish(localPublishTopic(), resultMessage)
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送短信结果回执失败", e)
-        }
-    }
-
-    private suspend fun publishPing() {
-        if (globalMqttClient?.isConnected != true || currentTopic.isBlank() || currentPassword.isBlank()) {
-            return
-        }
-
-        try {
-            val pingJson = MqttPayloadCodec.encode(
-                Ping(deviceId = HardwareProbeUtils.getDeviceId(this@MqttSyncService))
-            )
-
-            val encryptedPing = DsimCryptoUtils.encryptOrNull(pingJson, currentPassword)
-            if (encryptedPing == null) {
-                Log.e("dSIM_SyncService", "PING 加密失败")
-                return
-            }
-
-            val pingMessage = MqttMessage(encryptedPing.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            globalMqttClient?.publish(localPublishTopic(), pingMessage)
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送 PING 失败", e)
-        }
-    }
-
-    /**
-     * Broadcast this device's PONG snapshot. With [force] = false the snapshot is only sent when
-     * [HeartbeatPolicy] says it changed (or MAX_SILENCE_MS elapsed); PING replies and connects force it.
-     */
-    private suspend fun publishDeviceSnapshot(force: Boolean) {
-        if (globalMqttClient?.isConnected != true || currentTopic.isBlank() || currentPassword.isBlank()) {
-            return
-        }
-
-        try {
-            SimConfigIdentityManager.syncLocalConfigs(this@MqttSyncService)
-            DeviceDirectoryManager.saveLocalSnapshot(this@MqttSyncService)
-            val localQueue = HistorySyncQueueManager.getLocalQueueSnapshot(this@MqttSyncService)
-            val batteryManager = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
-            val batteryLevel = batteryManager.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            val batteryIntent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val batteryStatus = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
-            val isCharging = batteryStatus == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
-                batteryStatus == android.os.BatteryManager.BATTERY_STATUS_FULL
-
-            val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
-            val activeSims = dao.getActiveSimConfigs()
-            val sims = activeSims
-                .filter { it.bindMode != "REMOTE_SHADOW" }
-                .map { sim ->
-                    SimSnapshotMsg(
-                        mappingKey = sim.mappingKey,
-                        deviceId = sim.deviceId.ifBlank { HardwareProbeUtils.getDeviceId(this@MqttSyncService) },
-                        subscriptionId = sim.subscriptionId,
-                        slotIndex = sim.slotIndex,
-                        phone = sim.phoneNumber,
-                        mode = sim.bindMode
-                    )
-                }
-            // Fingerprint input: stable per-SIM identity, independent of JSON key order.
-            val simSummary = sims.joinToString(";") {
-                "${it.mappingKey}|${it.deviceId}|${it.subscriptionId}|${it.slotIndex}|${it.phone}|${it.mode}"
-            }
-
-            val deviceName = DeviceNameManager.getDisplayName(this@MqttSyncService)
-            val isDefaultSms = DefaultSmsManager.isDefaultSmsApp(this@MqttSyncService)
-            val fingerprint = HeartbeatPolicy.fingerprint(
-                deviceName = deviceName,
-                batteryLevel = batteryLevel,
-                isCharging = isCharging,
-                isDefaultSms = isDefaultSms,
-                simSummary = simSummary,
-                queueStatus = localQueue.status,
-                queuePosition = localQueue.position,
-                queueProgressCurrent = localQueue.progressCurrent,
-                queueProgressTotal = localQueue.progressTotal,
-                allowsRemoteStart = localQueue.allowsRemoteStart
-            )
-            val now = System.currentTimeMillis()
-            if (!HeartbeatPolicy.shouldPublish(heartbeatState, fingerprint, now, force)) {
-                return
-            }
-
-            val payloadJson = MqttPayloadCodec.encode(
-                Pong(
-                    deviceId = HardwareProbeUtils.getDeviceId(this@MqttSyncService),
-                    deviceName = deviceName,
-                    battery = batteryLevel,
-                    isCharging = isCharging,
-                    isDefaultSms = isDefaultSms,
-                    sims = sims,
-                    historyQueue = HistoryQueueStateMsg(
-                        allowRemoteStart = localQueue.allowsRemoteStart,
-                        queueId = localQueue.queueId,
-                        status = localQueue.status,
-                        position = localQueue.position,
-                        label = localQueue.label,
-                        detail = localQueue.detail,
-                        progressCurrent = localQueue.progressCurrent,
-                        progressTotal = localQueue.progressTotal,
-                        updatedAt = localQueue.updatedAt
-                    )
-                )
-            )
-
-            val encryptedPayload = DsimCryptoUtils.encryptOrNull(payloadJson, currentPassword)
-            if (encryptedPayload == null) {
-                Log.e("dSIM_SyncService", "设备快照加密失败")
-                return
-            }
-
-            val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
-                qos = 1
-            }
-            globalMqttClient?.publish(localPublishTopic(), message)
-            val reason = when {
-                force -> "forced"
-                heartbeatState.lastFingerprint != fingerprint -> "changed"
-                else -> "keepalive"
-            }
-            val sinceLast = now - heartbeatState.lastPublishedAt
-            heartbeatState = HeartbeatPolicy.afterPublish(fingerprint, now)
-            Log.d("dSIM_SyncService", "PONG published reason=$reason sinceLast=${sinceLast}ms")
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "广播设备资料失败", e)
-        }
-    }
-
-    private fun localPublishTopic(): String =
-        CloudTopics.publishTopic(currentTopic, HardwareProbeUtils.getDeviceId(this))
-
-    private fun buildOfflineJson(deviceId: String): String =
-        MqttPayloadCodec.encode(Offline(deviceId = deviceId, timestamp = System.currentTimeMillis()))
-
-    /** Tell peers we are leaving on purpose. Synchronous and short; failures are irrelevant. */
-    private fun publishOfflineBestEffort() {
-        val client = globalMqttClient ?: return
-        if (!client.isConnected || currentTopic.isBlank() || currentPassword.isBlank()) return
-        try {
-            val encrypted = DsimCryptoUtils.encryptOrNull(
-                buildOfflineJson(HardwareProbeUtils.getDeviceId(this)), currentPassword
-            ) ?: return
-            client.publish(localPublishTopic(), MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
-        } catch (_: Exception) {
-            // Best effort by design; the Last Will covers the unclean case.
-        }
-    }
-
-    private suspend fun syncRemoteSimsFromPong(pong: Pong) {
-        if (pong.sims.isEmpty()) {
-            return
-        }
-
-        val remoteDeviceName = pong.deviceName.trim()
-        val dao = DsimDatabase.getDatabase(this@MqttSyncService).dsimDao()
-
-        for (sim in pong.sims) {
-            val mappingKey = sim.mappingKey.trim()
-            val remoteDeviceId = sim.deviceId.trim()
-                .ifBlank { HardwareProbeUtils.parseDeviceIdFromMappingKey(mappingKey).orEmpty() }
-            val subscriptionId = sim.subscriptionId
-            val slotIndex = sim.slotIndex
-            val phoneNumber = sim.phone.trim()
-            if (mappingKey.isBlank() || phoneNumber.isBlank()) {
-                continue
-            }
-            PrivacyModeManager.rememberOwnPhone(this@MqttSyncService, phoneNumber)
-
-            val existingConfig = dao.getSimConfigByKey(mappingKey)
-            if (existingConfig != null && existingConfig.bindMode != "REMOTE_SHADOW") {
-                continue
-            }
-
-            dao.saveSimConfig(
-                buildRemoteShadowConfig(
-                    mappingKey = mappingKey,
-                    phoneNumber = phoneNumber,
-                    alias = remoteDeviceName,
-                    remoteDeviceId = remoteDeviceId,
-                    subscriptionId = subscriptionId,
-                    slotIndex = slotIndex,
-                    existingConfig = existingConfig,
-                    isActive = true
-                )
-            )
-        }
-    }
-
-    private fun buildRemoteShadowConfig(
-        mappingKey: String,
-        phoneNumber: String,
-        alias: String?,
-        remoteDeviceId: String,
-        subscriptionId: Int?,
-        slotIndex: Int?,
-        existingConfig: SimCardConfig?,
-        isActive: Boolean
-    ): SimCardConfig {
-        return SimCardConfig(
-            mappingKey = mappingKey,
-            phoneNumber = phoneNumber,
-            alias = alias?.trim().takeUnless { it.isNullOrBlank() } ?: existingConfig?.alias,
-            bindMode = "REMOTE_SHADOW",
-            isActive = isActive,
-            deviceId = remoteDeviceId.ifBlank { existingConfig?.deviceId.orEmpty() },
-            subscriptionId = subscriptionId ?: existingConfig?.subscriptionId,
-            slotIndex = slotIndex ?: existingConfig?.slotIndex
-        )
     }
 
     private fun createNotification(content: String): Notification {

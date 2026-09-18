@@ -44,3 +44,19 @@
   real inbound SMS -> dSIM_Receiver captured -> dSIM_Outbox flush sent=1 remaining=0.
 - Docs: REFACTORING.md (metrics, W5 heading/result, W11 table, batch table), AGENTS.md (tree, item 8, new C18).
 - Note: WMI-detached `cmd.exe /c python > log` produced no log file; running the probe via exec_command directly (~50 s) works.
+
+## E3 (W4 step 1) — done
+- Mechanical extraction from MqttSyncService (1102 -> 568 lines), no behaviour change:
+  CloudSession (broker/topic/password, @Volatile) replaces the three `current*` fields;
+  MqttPublisher (publishHistorySyncAck / publishSendCommandResult / publishPing / publishDeviceSnapshot /
+  publishOfflineBestEffort / buildOfflineJson / localPublishTopic + heartbeatState with resetHeartbeat());
+  MqttInboundHandler (handleIncomingMessage + 6 handlers + buildRemoteShadowConfig).
+  Service keeps: onStartCommand routing, connectAndSubscribe + callbacks, heartbeat loop, flushOutbox, notifications,
+  companion statics (globalMqttClient / staticConfig / ack waiters — W7 scope). `resolveHistoryImportAck` private -> internal.
+- Deliberately not done: per-action handler classes, connection manager, CloudNotificationCopy (W7 territory).
+- Build: testDebugUnitTest + assembleDebug + assembleRelease(-x lintVital*) DONE exit=0, JVM 62/62.
+- Emulator probe after reinstall: PING -> 2 PONGs (connect burst + reply) with sims/historyQueue intact; NOPE / action-less
+  -> WARN only; OFFLINE -> "peer OFFLINE"; inbound SMS -> Receiver -> Outbox sent=1 -> probe decrypted SyncPayload
+  body "W5 probe sms" on the wire (first time the probe caught the outbound sync itself).
+- Gotcha: after `install -r` + launch, the service needs ~90 s on this emulator before "subscribed" appears; a probe run
+  earlier sees nothing (not a regression). Check /proc/net/tcp6 for :22B3 ESTABLISHED before probing.

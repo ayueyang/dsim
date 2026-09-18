@@ -56,7 +56,7 @@
 | W1 | ~~P0~~ **P2**（已降级） | 补齐默认短信应用的三个必备组件 | M | — |
 | W2 | **P0** | `deviceId` 改为应用自管持久标识 | S | — |
 | W3 | **P0** | 历史同步状态机与文案解耦 | S | — |
-| W4 | P1 | 拆分 `MqttSyncService`（1088 行 / 21 个私有方法） | L | 建议在 W5 后 |
+| W4 | P1 | 拆分 `MqttSyncService` — 第 1 步 ✅（批次 E：入站/出站抽出，1102 → 568 行）；第 2 步（连接管理）待 W7 一起 | L | — |
 | W5 | P1 | ✅ 协议消息数据类化 + 去哨兵字符串（批次 E） | M | — |
 | W6 | P1 | 错误处理与可观测性 | M | — |
 | W7 | P1 | 并发与生命周期治理 | S/M | 与 W4 绑定 |
@@ -133,9 +133,16 @@
 
 ---
 
-### W4（P1）拆分 `MqttSyncService`
+### W4（P1）拆分 `MqttSyncService` — 第 1 步 ✅ 已完成（批次 E）
 
-**问题**：1088 行、21 个私有方法，一个类同时承担：连接生命周期、通知文案渲染（5 个 `build*Message`）、7 个协议处理器、短信实际发送、SIM 解析、JSON 辅助。
+**已做**：`MqttSyncService` 1102 → 568 行。新增三个包内 `internal` 类：
+- `CloudSession`：当前组的 broker / topic / password（`@Volatile`），服务写、其余两类读，取代三个 `current*` 字段；
+- `MqttPublisher`：全部出站控制消息（`publishHistorySyncAck` / `publishSendCommandResult` / `publishPing` / `publishDeviceSnapshot` / `publishOfflineBestEffort` / `buildOfflineJson`）与心跳指纹状态 `heartbeatState`（`resetHeartbeat()` 在连接成功时调用）。C13 / C14 的实现点现在集中在这里；
+- `MqttInboundHandler`：`handleIncomingMessage` 的 `when (inbound)` 分发和 7 个处理器（`handleHistorySyncAck` / `handleHistoryQueueBatch` / `handleSendCommand` / `handleSendCommandResult` / `syncRemoteSimsFromPong` / `buildRemoteShadowConfig` / SMS 落库）。回复经 `publisher`。
+
+有意**没做**：按 action 拆成 6 个独立 handler 类（W5 之后 `when` 穷举已给了编译期保障，再拆一层收益小）；连接管理 / 静态量 / 通知文案仍在服务里（与 W7 绑定）。方法体是原样搬迁（仅 `this` → `context`、字段 → `session.*`），行为未变。
+
+**原问题**：1088 行、21 个私有方法，一个类同时承担：连接生命周期、通知文案渲染（5 个 `build*Message`）、7 个协议处理器、短信实际发送、SIM 解析、JSON 辅助。
 
 **改法（分两步，不要一步到位）**：
 

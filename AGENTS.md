@@ -114,7 +114,10 @@ dSIM/
         │   │   │   ├── DsimEntities.kt           5 个 @Entity
         │   │   │   ├── DsimDao.kt                40 个 DAO 方法
         │   │   │   └── DsimDatabase.kt           v7 + 6 次 Migration
-        │   │   ├── MqttSyncService.kt            ★ 协议中枢（发送执行已抽出；持久会话；冲刷发件箱）
+        │   │   ├── MqttSyncService.kt            ★ 前台服务：连接生命周期 / 心跳循环 / 通知 / 冲刷发件箱（W4 后 568 行）
+        │   │   ├── CloudSession.kt               当前组凭据（服务写，Publisher/Inbound 读）
+        │   │   ├── MqttPublisher.kt              全部出站控制消息 + 心跳指纹（C13/C14 实现点）
+        │   │   ├── MqttInboundHandler.kt         解密 → MqttPayloadCodec.decode → when(inbound) 分发
         │   │   ├── SyncOutbox.kt                 ★ 入站同步发件箱：事务入队 + 单飞冲刷
         │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
         │   │   ├── SmsSentResultReceiver.kt     系统发送回调
