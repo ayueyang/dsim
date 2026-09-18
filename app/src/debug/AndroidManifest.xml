@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug-only components (W15 / findings F17).
+
+    MainActivity is the 956-line internal test panel: it injects forged SMS straight into the DB and
+    publishes them to the whole sync group, wipes the private database, toggles the root probe and
+    dumps both SMS stores. It must not exist in a release build, so its <activity> entry lives here
+    instead of app/src/main/AndroidManifest.xml. The class itself still compiles into every variant
+    (SettingsActivity references it), but the release manifest has no declaration, so it cannot be
+    started by anyone — see the BuildConfig.DEBUG guard in SettingsActivity.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="测试功能"
+            android:theme="@style/Theme.DSIM" />
+    </application>
+
+</manifest>

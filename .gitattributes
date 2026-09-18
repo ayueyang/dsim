@@ -1,0 +1,43 @@
+# 统一行尾（AGENTS C8：源文件一律 UTF-8 无 BOM + LF）
+# 背景：本仓库此前没有 .gitattributes，检出全靠 core.autocrlf=true 兜底，
+# 工作区里有 18 个已跟踪文本文件是 CRLF，换一台没开 autocrlf 的机器就会产生整文件 diff。
+
+# 默认：git 自行判定文本/二进制；文本在库内和工作区都用 LF
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，否则 cmd.exe 可能解析失败（gradlew.bat）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 明确声明常见文本类型，避免 text=auto 误判
+*.kt      text
+*.kts     text
+*.java    text
+*.xml     text
+*.md      text
+*.sh      text eol=lf
+*.pro     text
+*.toml    text
+*.properties text
+*.gitignore  text
+*.gitattributes text
+
+# gradle wrapper 脚本（无扩展名）必须是 LF
+gradlew text eol=lf
+
+# 二进制：git 不得做行尾转换，也不做 diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.jar   binary
+*.apk   binary
+*.aab   binary
+*.keystore binary
+*.jks   binary
+*.ttf   binary
+*.otf   binary
+*.zip   binary
+*.so    binary

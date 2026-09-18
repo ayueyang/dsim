@@ -18,6 +18,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildFeatures {
+        // AGP 8 默认不生成 BuildConfig；W15 的 release 入口屏蔽依赖 BuildConfig.DEBUG。
+        buildConfig = true
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

@@ -67,7 +67,7 @@
 | W12 | P2 | 文案进 `strings.xml` | L | 建议在 W4/W5 后 |
 | W13 | P2 | 颜色进 `colors.xml` | M | — |
 | W14 | P3 | 口令存储加固（EncryptedSharedPreferences） | M | — |
-| W15 | P3 | debug 工具不进 release | S | — |
+| W15 | **P3 ✅ 已完成** | debug 工具不进 release（清单分变体 + `BuildConfig.DEBUG`） | S | — |
 | W16 | P3 | 发布工程化（签名/混淆/版本号） | M | — |
 | W17 | P3 | 通知 id 稳定化 | S | — |
 | W18 | P3 | 测试补齐（4 类纯逻辑） | M | W5 后更好做 |
@@ -283,11 +283,13 @@
 
 ---
 
-### W15（P3）debug 工具不进 release
+### W15（P3）debug 工具不进 release ✅ 已完成（2026-09-18，批次 C）
 
-**问题**：`SettingsActivity:640` 直接 `startActivity(MainActivity)`，954 行的调试面板在任何 release 构建里都可达。
+**问题**：`SettingsActivity:640` 直接 `startActivity(MainActivity)`，956 行的调试面板在任何 release 构建里都可达。
 
-**改法**：入口按钮用 `if (BuildConfig.DEBUG)` 包裹；`MainActivity` 也可在 release 的 Manifest 里移除（用 `debugOverlay` 或 `manifestPlaceholders`）。
+**已实施**：`<activity .MainActivity>` 从主清单移入新增的 `app/src/debug/AndroidManifest.xml`（清单合并只在 debug 变体加入），release 清单不再声明该组件；入口按钮用 `BuildConfig.DEBUG` 包裹并在非 debug 下 `GONE`。为此在 `app/build.gradle.kts` 打开 `buildFeatures { buildConfig = true }`（AGP 8 默认关闭）。
+
+**验收**：`aapt2 dump xmltree` 对 release APK 的 `MainActivity` 引用数为 0，debug APK 为 2；debug 包里「设置 → 测试功能」仍可进入面板（模拟器实测）。
 
 ---
 
@@ -351,8 +353,8 @@
 > |---|---|---|
 > | A | W19 发件箱 + 持久会话 | ✅ 已完成 |
 > | B | W20 KDF 一次派生 + 按 topic 跳过回声 + 心跳放宽（PONG Toast 已顺手去掉） | ✅ 已完成 |
-> | C | 一行修复合集：`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | 下一步 |
-> | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://` | |
+> | C | 一行修复合集：`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | ✅ 已完成 |
+> | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://`、base topic 通配符校验 | 下一步 |
 > | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | |
 > | F | W21、W2、W3、W8、W12、W13、W9、W16–W18 | |
 > | 末 | W1（仅当产品决定支持运营商发送侧时） | |

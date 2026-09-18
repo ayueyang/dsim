@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MenuItem
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -636,8 +637,16 @@ class SettingsActivity : AppCompatActivity() {
             ).show()
         }
 
-        btnOpenTestTools.setOnClickListener {
-            startActivity(Intent(this, MainActivity::class.java))
+        // W15：调试面板（MainActivity）只在 debug 变体的 Manifest 里声明，release 包中无此组件。
+        // 这里同步隐藏入口，避免 release 界面出现一个点了必然崩的按钮。
+        if (BuildConfig.DEBUG) {
+            btnOpenTestTools.visibility = View.VISIBLE
+            btnOpenTestTools.setOnClickListener {
+                startActivity(Intent(this, MainActivity::class.java))
+            }
+        } else {
+            btnOpenTestTools.visibility = View.GONE
+            btnOpenTestTools.setOnClickListener(null)
         }
     }
 

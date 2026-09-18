@@ -40,6 +40,8 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 
 - compileSdk 36 但 AGP 为 8.7.3，构建会输出"AGP 仅验证到 compileSdk 35"警告。这是**已知且可接受**的，不要为此改 compileSdk。
 - `gradle/libs.versions.toml` 是模板残留、未生效，且其 `agp = "9.1.0"` 与根构建文件不一致。**不要以该文件为准**，实际版本看根 `build.gradle.kts`。
+- `app/build.gradle.kts` 显式打开了 `buildFeatures { buildConfig = true }`。AGP 8 默认不生成 `BuildConfig`，关掉它会让 `SettingsActivity` 的 `BuildConfig.DEBUG` 直接编译失败（W15 依赖它）。
+- `:app:assembleRelease` 会跑 `lintVital*`，该任务需要联网拉 lint 依赖；在网络受限的环境里可能长时间挂死。确认过依赖已缓存时可用 `-x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease` 跳过，但这不代表 lint 检查通过。
 
 ---
 
@@ -73,6 +75,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C4 | 密钥派生自**口令**，与 MQTT Topic 无关 | 历史上形参名曾叫 `topic`，导致多次误判。V2 已改名 `secret`，别再改回去 |
 | C5 | Manifest 里默认短信应用的必须组件不能删 | `SmsReceiver`、`ComposeSmsActivity`、`HeadlessSmsSendService`、`MmsReceiver`。少一个系统就拒绝授予默认短信角色（后三者目前仍是占位实现，见 §6） |
 | C6 | 两个短信接收器的动作互斥规则不能破坏 | 默认短信应用只处理 `SMS_DELIVER`，非默认只处理 `SMS_RECEIVED`。破坏它会收到重复短信 |
+| C15 | 两个短信接收器都必须带 `android:permission="android.permission.BROADCAST_SMS"` | 少了它，任何应用都能伪造 PDU 广播，被落库、回写系统库并同步给全组设备。系统（`com.android.phone`）持有该权限，加了不影响真实投递——改动后务必用真实入站短信回归一次，不要用 `adb am broadcast` 判定（它一直被 protected broadcast 规则拒绝） |
 | C7 | 新增云端上传点前，必须过 `UsageModeManager` 的闸 | `canUploadIncomingSms` / `canReceiveCloudSms` / `canUseCloud`。这是"本地模式"隐私承诺的代码落实 |
 | C8 | 所有源文件必须 UTF-8 无 BOM、LF 行尾 | 曾发生过 GBK 被误读为 UTF-8 后写回导致的中文乱码事故（4 处，已在 V2.0 修复） |
 | C9 | 新增 MQTT 动作时，需在 `handleIncomingMessage` 中按正确的顺序位置加分支，并对定向动作校验 `targetDeviceId == localDeviceId` | 顺序错会导致消息被上游分支吞掉；缺校验会导致别的设备的回执被误处理 |
@@ -102,7 +105,7 @@ dSIM/
     ├── proguard-rules.pro              空模板
     └── src/
         ├── main/
-        │   ├── AndroidManifest.xml
+        │   ├── AndroidManifest.xml         （不含 MainActivity，见 src/debug）
         │   ├── java/com/example/dsim/
         │   │   ├── database/
         │   │   │   ├── DsimEntities.kt           5 个 @Entity
@@ -155,7 +158,7 @@ dSIM/
         │   │   ├── SettingsActivity.kt           设置中心
         │   │   ├── DeviceManagerActivity.kt      设备中心
         │   │   ├── SimBindingActivity.kt         SIM 绑定
-        │   │   ├── MainActivity.kt               调试入口（exported=false）
+        │   │   ├── MainActivity.kt               调试入口（仅 debug 变体声明，见 src/debug/AndroidManifest.xml）
         │   │   ├── DSimHardwareTester.kt         硬件自检
         │   │   ├── SmsDatabaseTester.kt          数据库测试工具
         │   │   ├── ComposeSmsActivity.kt         ✗ 占位
@@ -172,6 +175,8 @@ dSIM/
         │       ├── values/          colors / strings / themes
         │       ├── values-night/    themes（仅重复 Base）
         │       └── xml/             backup_rules / data_extraction_rules（模板）
+        ├── debug/
+        │   └── AndroidManifest.xml   仅 debug 变体：声明 MainActivity 调试面板（W15）
         ├── test/                     模板用例
         └── androidTest/              模板用例
 ```
@@ -213,6 +218,8 @@ dSIM/
 ### 8.1 应用内调试面板
 
 `MainActivity`（label「测试功能」，`exported=false`，只能从「设置 → 测试功能」进入）提供：硬件探测、注入模拟短信、全量历史导入、双库只读测试、SIM 管理、Root 探测/切换、清空私有库、通知测试、设备雷达。
+
+**它只存在于 debug 变体**：`<activity>` 声明在 `app/src/debug/AndroidManifest.xml`，release 清单里没有这个组件；`SettingsActivity` 的入口按钮同样用 `BuildConfig.DEBUG` 包裹（非 debug 下 `GONE`）。类本身仍参与 release 编译，所以改 `MainActivity` 不会只在 debug 下编译失败。若要新增调试组件，一并放进 debug 清单，不要加回主清单。
 
 注意：其中的「注入模拟短信」**直接 `dao.insertMessage` 后发 MQTT，绕过了 `SmsReceiver`**，
 因此它验证不了采集链路（互斥规则、号码标准化、来源解析、系统库回写都不经过）。要测采集链路请用真注入。

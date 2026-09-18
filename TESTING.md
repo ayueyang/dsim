@@ -136,6 +136,43 @@ adb -s $A shell cmd role add-role-holder android.app.role.SMS com.example.dsim
 
 已实测：默认短信应用时走 `SMS_DELIVER`，移除角色后走 `SMS_RECEIVED`，**不会重复处理**。
 
+> 重装 APK 后运行时权限会被重置，`RECEIVE_SMS` 没授予时系统会在入队阶段直接跳过广播
+> （`dumpsys activity broadcasts` 里能看到 `skipped by policy at enqueue: Permission Denial ... requires
+> android.permission.RECEIVE_SMS`），表现为「一条日志都没有」。先 `pm grant` 再测：
+> `for p in RECEIVE_SMS READ_SMS SEND_SMS RECEIVE_MMS READ_PHONE_STATE READ_PHONE_NUMBERS READ_CONTACTS POST_NOTIFICATIONS; do adb -s $A shell pm grant com.example.dsim android.permission.$p; done`
+
+### 3.2.1 接收器权限限定验证（覆盖 C15，批次 C 新增）
+
+两个接收器都必须带 `android:permission="android.permission.BROADCAST_SMS"`。检查清单并确认真实投递未被挡：
+
+```bash
+# 1) 清单里两个接收器都有权限限定（debug 与 release 都要查）
+AAPT=$LOCALAPPDATA/Android/Sdk/build-tools/36.1.0/aapt2
+$AAPT dump xmltree app/build/outputs/apk/release/app-release-unsigned.apk --file AndroidManifest.xml \
+  | grep -A4 -E 'SmsReceiver|SmsReceivedReceiver' | grep -c permission     # 期望 2
+
+# 2) 真实投递仍然成功（这才是有效证据）
+adb -s $A shell cmd role add-role-holder android.app.role.SMS com.google.android.apps.messaging
+adb -s $A logcat -c && adb -s $A emu sms send 10010 "perm-probe" && sleep 8
+adb -s $A logcat -d | grep dSIM_     # 期望 Captured ... action=...SMS_RECEIVED + outbox sent=1 remaining=0
+adb -s $A shell cmd role add-role-holder android.app.role.SMS com.example.dsim
+```
+
+**不要**用 `adb shell am broadcast -a android.provider.Telephony.SMS_RECEIVED` 判定修复是否生效：
+该动作是 protected broadcast，shell（uid 2000）在任何版本下都会被拒（`Permission Denial: not allowed
+to send broadcast`），加不加 `BROADCAST_SMS` 结果都一样。
+
+### 3.2.2 调试面板不在 release（覆盖 W15，批次 C 新增）
+
+```bash
+$AAPT dump xmltree app/build/outputs/apk/release/app-release-unsigned.apk --file AndroidManifest.xml | grep -c MainActivity   # 期望 0
+$AAPT dump xmltree app/build/outputs/apk/debug/app-debug.apk           --file AndroidManifest.xml | grep -c MainActivity   # 期望 2
+```
+
+debug 包里「设置 → 测试功能」应仍可进入（`dumpsys activity activities | grep topResumedActivity`
+显示 `.MainActivity`）。注意 `MainActivity` 是 `exported=false`，用 `adb am start` 一定被拒，
+这属于预期，必须从应用界面点进去验证。
+
 ### 3.3 通知验证
 
 ```bash
@@ -359,6 +396,12 @@ SEND_CMD 端到端已按 §5.2 实测跑通，不再列为缺口。
 - 仪器测试：`adb shell am instrument -w -e class com.example.dsim.SyncOutboxDaoTest,com.example.dsim.SendCommandLedgerTest com.example.dsim.test/androidx.test.runner.AndroidJUnitRunner`，期望 `OK (10 tests)`。只用独立/内存数据库，不发布 MQTT。
 - 断网补发端到端：`adb shell svc wifi disable; svc data disable` → `adb emu sms send 10010 x` 两次 → logcat 应只有 `dSIM_Receiver: Captured`，**没有** `dSIM_Outbox: flush sent=` → `svc wifi enable; svc data enable`，重新拉起应用或等心跳 → 期望 `dSIM_Outbox: flush sent=2 dropped=0 failed=0 remaining=0` 与 `dSIM_SyncService: outbox[connect] sent=2`。
 - 注意 Paho 自动重连在模拟器切网后不一定立刻触发；本次验证是 `am force-stop` 后重新启动应用走 INIT_DAEMON 路径。这是测试手段，不是产品缺陷，但也说明 W20/连接状态机仍需完善。
+
+## 2026-09-18 一行级加固回归（批次 C）
+
+- `:app:assembleRelease` 会执行 `lintVital*`，需要联网拉 lint 依赖。本次在宿主网络受限时该任务挂死 15 分钟无进展（jstack 显示阻塞在 SSL socket read），用 `-x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease` 跳过后 release 构建正常。跳过 lint 不等于 lint 通过。
+- 权限限定与 debug 面板的验证步骤见 §3.2.1 / §3.2.2。
+- 行尾：`git ls-files --eol | grep w/crlf` 期望只剩 `gradlew.bat`（`.gitattributes` 有意保留它的 CRLF）。
 
 ## 2026-09-18 正确性回归补充
 
