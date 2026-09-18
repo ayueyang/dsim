@@ -166,11 +166,9 @@ dSIM/
         │   │   ├── ComposeSmsActivity.kt         ✗ 占位
         │   │   ├── HeadlessSmsSendService.kt     ✗ 占位
         │   │   ├── MmsReceiver.kt                ✗ 占位
-        │   │   ├── SendCmdPayload.kt             ⚠ 死代码
-        │   │   ├── DsimMqttEngine.kt             ⚠ 死代码
-        │   │   └── DsimNetworkEngine.kt          ⚠ 死代码
+        │   │   └── SendCmdPayload.kt             ⚠ 暂未使用（W5 协议数据类化时启用）
         │   └── res/
-        │       ├── layout/          20 个（item_sms.xml 为死资源）
+        │       ├── layout/          19 个
         │       ├── drawable/        29 个（23 bg_* + 6 ic_*）
         │       ├── drawable-nodpi/  6 张预置头像
         │       ├── menu/            1
@@ -194,7 +192,7 @@ dSIM/
 5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
 6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前仍是明文，待迁移到 `EncryptedSharedPreferences`。批次 D 已做完两件事收窄风险：备份/迁移规则改为 deny-by-default（口令与 Room 库不再离开设备），且所有云端凭据读写已收口到 `CloudSettingsManager`（迁移时只需改一处）。迁移前要先想清楚密钥丢失（恢复出厂、Keystore 失效）后的降级路径。
 7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
-8. **清理死代码**：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`SendCmdPayload.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`。
+8. ~~清理死代码~~ 已完成（批次 E）：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml` 与 `hivemq-mqtt-client` 依赖已删；`DsimDao` 4 个零调用方法已删、`getAllSimConfigsForUi` 并入 `getAllSimConfigs`。`SendCmdPayload.kt` 保留给 W5。
 9. **文案与配色去硬编码**：中文字符串应进 `strings.xml`（当前 `R.string.*` 使用次数为 0），界面色值应进 `colors.xml`。
 10. ~~自身回声日志级别~~ 已解决（批次 B）：发布 topic 带设备后缀，`messageArrived` 按 topic 丢弃自身回声，不再解密也不再打 WARNING。
 

@@ -51,7 +51,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/io.netty.versions.properties"
         }
     }
 }
@@ -63,9 +62,6 @@ dependencies {
     implementation("androidx.activity:activity:1.8.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    
-    // MQTT 核心引擎
-    implementation("com.hivemq:hivemq-mqtt-client:1.3.3")
     
     // Paho MQTT (用于前台服务)
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")

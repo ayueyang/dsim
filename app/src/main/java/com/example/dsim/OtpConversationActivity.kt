@@ -73,7 +73,7 @@ class OtpConversationActivity : AppCompatActivity() {
             val dao = DsimDatabase.getDatabase(this@OtpConversationActivity).dsimDao()
             dao.getAllSmsMessagesFlow().collect { messages ->
                 allMessagesCache = messages
-                simConfigsByKeyCache = dao.getAllSimConfigsForUi().associateBy { it.mappingKey }
+                simConfigsByKeyCache = dao.getAllSimConfigs().associateBy { it.mappingKey }
                 withContext(Dispatchers.Main) {
                     renderOtpMessages()
                 }

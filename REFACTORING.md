@@ -43,7 +43,7 @@
 | 手工拼 JSON | 15 处 `JSONObject()` | 接收端 16 步 if-else 逐 action 分支 |
 | 哨兵字符串比较 | 11 处 `"ENCRYPTION_ERROR"` | |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
-| DAO 死方法 | 4 个 | 见 W10 |
+| DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
 | 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
@@ -231,7 +231,7 @@
 
 ---
 
-### W10（P2）DAO 清理
+### W10（P2）DAO 清理 — ✅ 已完成（批次 E）
 
 **问题**：`DsimDao.kt` 40 个方法中 4 个零调用：`getRecentConversations`、`getMessagesByAddress`、`getMessagesByAddressList`、`countSimilarLocalMessage`。另有 `getAllSimConfigs` 与 `getAllSimConfigsForUi` 的 SQL **完全相同**（后者有 3 处调用：`DeviceManagerActivity:162`、`OtpConversationActivity:76`、`SmsChatActivity:111`）。
 
@@ -241,7 +241,7 @@
 
 ---
 
-### W11（P2）死代码清理
+### W11（P2）死代码清理 — ✅ 已完成（批次 E，`SendCmdPayload.kt` 按计划保留给 W5）
 
 | 对象 | 说明 |
 |---|---|
@@ -354,8 +354,8 @@
 > | A | W19 发件箱 + 持久会话 | ✅ 已完成 |
 > | B | W20 KDF 一次派生 + 按 topic 跳过回声 + 心跳放宽（PONG Toast 已顺手去掉） | ✅ 已完成 |
 > | C | 一行修复合集：`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | ✅ 已完成 |
-> | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://`、base topic 通配符校验 | 下一步 |
-> | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | |
+> | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://`、base topic 通配符校验 | ✅ 已完成 |
+> | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | W10/W11/hivemq ✅；W5 下一步 |
 > | F | W21、W2、W3、W8、W12、W13、W9、W16–W18 | |
 > | 末 | W1（仅当产品决定支持运营商发送侧时） | |
 >

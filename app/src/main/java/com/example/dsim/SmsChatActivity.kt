@@ -108,7 +108,7 @@ class SmsChatActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
             dao.getMessagesByAddressFlow(address).collect { messages ->
-                val configsForUi = dao.getAllSimConfigsForUi()
+                val configsForUi = dao.getAllSimConfigs()
                 configMap = configsForUi.associateBy { it.mappingKey }
 
                 withContext(Dispatchers.Main) {

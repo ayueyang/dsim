@@ -57,9 +57,6 @@ interface DsimDao {
     @Query("UPDATE sms_messages SET mappingKey = :mappingKey WHERE id = :messageId")
     suspend fun updateMessageMappingKey(messageId: Long, mappingKey: String)
 
-    @Query("SELECT * FROM sms_messages WHERE address = :address ORDER BY timestamp ASC")
-    fun getMessagesByAddress(address: String): Flow<List<SmsMessage>>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSimConfig(config: SimCardConfig)
 
@@ -144,27 +141,6 @@ interface DsimDao {
 
     @Query(
         """
-        SELECT COUNT(*) FROM sms_messages
-        WHERE deviceId = :deviceId
-          AND address = :address
-          AND body = :body
-          AND type = :type
-          AND mappingKey = :mappingKey
-          AND timestamp BETWEEN :startTimestamp AND :endTimestamp
-        """
-    )
-    suspend fun countSimilarLocalMessage(
-        deviceId: String,
-        address: String,
-        body: String,
-        type: Int,
-        mappingKey: String,
-        startTimestamp: Long,
-        endTimestamp: Long
-    ): Int
-
-    @Query(
-        """
         SELECT * FROM sms_messages
         WHERE deviceId = :deviceId
           AND address = :address
@@ -190,19 +166,10 @@ interface DsimDao {
     suspend fun clearAllSmsMessages()
 
     @Query("SELECT * FROM sms_messages WHERE timestamp IN (SELECT MAX(timestamp) FROM sms_messages GROUP BY address) ORDER BY timestamp DESC")
-    suspend fun getRecentConversations(): List<SmsMessage>
-
-    @Query("SELECT * FROM sms_messages WHERE timestamp IN (SELECT MAX(timestamp) FROM sms_messages GROUP BY address) ORDER BY timestamp DESC")
     fun getRecentConversationsFlow(): Flow<List<SmsMessage>>
 
     @Query("SELECT * FROM sms_messages WHERE address = :address ORDER BY timestamp ASC")
-    suspend fun getMessagesByAddressList(address: String): List<SmsMessage>
-
-    @Query("SELECT * FROM sms_messages WHERE address = :address ORDER BY timestamp ASC")
     fun getMessagesByAddressFlow(address: String): Flow<List<SmsMessage>>
-
-    @Query("SELECT * FROM sim_card_configs")
-    suspend fun getAllSimConfigsForUi(): List<SimCardConfig>
 
     @Query("SELECT * FROM sms_messages ORDER BY timestamp ASC")
     suspend fun getAllSmsMessagesAsc(): List<SmsMessage>

@@ -101,13 +101,12 @@ dSIM 是一款**分布式多设备短信同步应用**：用户在多台 Android
 | `androidx.lifecycle:lifecycle-runtime-ktx` | 2.6.2 | `lifecycleScope` |
 | `androidx.room:room-runtime` / `room-ktx` | 2.6.1 | 本地数据库 |
 | `org.eclipse.paho:org.eclipse.paho.client.mqttv3` | 1.2.5 | **实际使用的 MQTT 实现** |
-| `com.hivemq:hivemq-mqtt-client` | 1.3.3 | 遗留依赖，仅 `DsimMqttEngine`（死代码）引用 |
 | `com.google.code.gson:gson` | 2.10.1 | JSON 序列化 |
 | `com.googlecode.libphonenumber:libphonenumber` | 9.0.29 | E.164 号码标准化 |
 
 ### 2.3 构建时已知隐患
 
-1. **版本目录未生效且数据陈旧**：`gradle/libs.versions.toml` 声明 `agp = "9.1.0"`，但根 `build.gradle.kts` 实际使用 8.7.3，`app/build.gradle.kts` 也基本未引用版本目录。该文件属于模板残留，容易误导后续维护者。
+1. ~~版本目录未生效且数据陈旧~~ 已解决（批次 E）：`gradle/libs.versions.toml` 从未被引用（`agp = "9.1.0"` 与实际 8.7.3 矛盾），已删除。
 2. **AGP 与 compileSdk 不匹配**：AGP 8.7.3 官方仅验证到 compileSdk 35，当前使用 36，构建时会产生 `This Android Gradle plugin (8.7.3) was tested up to compileSdk = 35` 警告。建议升级 AGP 或添加 `android.suppressUnsupportedCompileSdk=36`。
 3. **Gradle 守护进程要求 JDK 21**：`gradle/gradle-daemon-jvm.properties` 固定 `toolchainVersion=21`。在未将 JDK 21 加入 Gradle 可发现的安装路径时，构建会直接失败并报 `Cannot find a Java installation ... Compatible with Java 21`。当前可用的绕过方式：
 
@@ -681,7 +680,7 @@ queueId 生成规则：远程发起为 `queue_<当前毫秒>_<UUID 前 6 位>`�
 
 ### 12.3 布局清单（20 个）
 
-`activity_sms_list`、`activity_sms_chat`、`activity_settings`、`activity_device_manager`、`activity_otp_conversation`、`activity_onboarding`、`activity_main`、`dialog_create_conversation`、`dialog_contact_picker`、`dialog_conversation_actions`、`dialog_conversation_profile`、`dialog_sender_selector`、`dialog_history_import_queue`、`item_conversation`、`item_chat_bubble`、`item_otp_message`、`item_sender_option`、`item_contact_phone`、`item_avatar_preset`、`item_sms`（**无任何引用，遗留**）。
+`activity_sms_list`、`activity_sms_chat`、`activity_settings`、`activity_device_manager`、`activity_otp_conversation`、`activity_onboarding`、`activity_main`、`dialog_create_conversation`、`dialog_contact_picker`、`dialog_conversation_actions`、`dialog_conversation_profile`、`dialog_sender_selector`、`dialog_history_import_queue`、`item_conversation`、`item_chat_bubble`、`item_otp_message`、`item_sender_option`、`item_contact_phone`、`item_avatar_preset`（`item_sms` 已于批次 E 删除）。
 
 `SimBindingActivity` 与 `DeviceManagerActivity` 不使用 XML 布局，界面由代码构建。
 
@@ -867,17 +866,13 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 | CI | 无 |
 | 应用图标 | 使用 AS 默认生成的 `ic_launcher` 自适应图标 |
 
-### 18.4 遗留死代码（△）
+### 18.4 遗留死代码（△）— 批次 E 已清理
 
-以下文件/资源在项目中**零引用**，可安全删除（建议在确认无回滚需求后一并清理）：
+已删除：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`、`hivemq-mqtt-client` 依赖及其 netty 打包排除项；`DsimDao` 中 `getRecentConversations` / `getMessagesByAddress`（Flow）/ `getMessagesByAddressList` / `countSimilarLocalMessage` 四个零调用方法已删，`getAllSimConfigsForUi` 并入同 SQL 的 `getAllSimConfigs`。
 
 | 对象 | 说明 |
 |---|---|
-| `DsimMqttEngine.kt`（94 行） | 早期 EMQX 引擎，仅含 `SYNC_SMS` 旧协议 |
-| `DsimNetworkEngine.kt`（65 行） | 早期网络引擎 |
-| `SendCmdPayload.kt`（10 行） | 远程发信载荷的 data class，实际发信由 `SmsChatActivity` 手工拼 `JSONObject`，该类从未被使用 |
-| `res/layout/item_sms.xml` | 无任何引用 |
-| `gradle/libs.versions.toml` | 版本目录未生效，且 AGP 版本与根构建文件不一致 |
+| `SendCmdPayload.kt`（10 行） | 远程发信载荷的 data class，目前仍未被使用；W5 协议数据类化时启用，届时不再算死代码 |
 
 ---
 
@@ -927,7 +922,6 @@ dSIM/
 ├── settings.gradle.kts            rootProject.name = "dSIM"，单模块 :app
 ├── gradle.properties
 ├── gradle/
-│   ├── libs.versions.toml         ⚠ 模板残留，未生效且 AGP 版本不一致
 │   └── gradle-daemon-jvm.properties  固定 toolchainVersion=21
 ├── local.properties               不入库
 ├── ui_prototypes/                 UI 参考素材（已 gitignore）
@@ -981,12 +975,10 @@ dSIM/
 | `SmsSourceResolver.kt` | 113 | 短信来源解析 |
 | `ConversationProfileStore.kt` | 106 | 会话档案 |
 | `UsageModeManager.kt` | 106 | 使用模式 |
-| `DsimMqttEngine.kt` | 94 | ⚠ 死代码 |
 | `SmsTagParserUtils.kt` | 89 | 来源标签渲染 |
 | `database/DsimEntities.kt` | 86 | 4 个实体 |
 | `SmsSourceRepairManager.kt` | 72 | 借卡场景修复 |
 | `CloudSettingsManager.kt` | 72 | 云端配置读写 |
-| `DsimNetworkEngine.kt` | 65 | ⚠ 死代码 |
 | `OtpCopyReceiver.kt` | 65 | 验证码复制广播 |
 | `DefaultSmsManager.kt` | 64 | 默认短信角色查询/申请 |
 | `CorePermissionHelper.kt` | 56 | 权限清单与缺失检测 |
@@ -1010,7 +1002,7 @@ dSIM/
 
 | 目录 | 文件数 | 说明 |
 |---|---|---|
-| `res/layout` | 20 | 见 12.3（`item_sms.xml` 为死资源） |
+| `res/layout` | 19 | 见 12.3 |
 | `res/drawable` | 29 | 23 个 `bg_*` 自定义背景 + 6 个 `ic_*` 矢量图标 |
 | `res/drawable-nodpi` | 6 | 预置头像 PNG |
 | `res/menu` | 1 | `menu_sms_list.xml` |

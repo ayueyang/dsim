@@ -159,7 +159,7 @@ class DeviceManagerActivity : AppCompatActivity() {
             DashboardData(
                 profiles = dao.getAllDeviceProfiles(),
                 history = dao.getRecentDeviceHistory(20),
-                simConfigs = dao.getAllSimConfigsForUi()
+                simConfigs = dao.getAllSimConfigs()
             )
         }
         val profiles = dashboardData.profiles
