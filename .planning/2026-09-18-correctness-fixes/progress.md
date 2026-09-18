@@ -30,3 +30,16 @@
 - Source/docs changes remain uncommitted for user review. No push, no resets of unrelated files.
 
 Final cleanup: stopped the emulator and our managed ADB server. Verified all 23 uploaded files by SHA-256 and strict UTF-8/LF checks. HEAD remains 82c84f0 (no commit/push).
+
+## Commit (2026-09-18, later session)
+AgentDock task: tsk_1dd1ab5cfda65306.
+| Check | Result |
+|---|---|
+| git diff --check | PASS |
+| Encoding of 19 pending files (BOM / CR / UTF-8 validity) | PASS: no BOM, 0 CR, valid UTF-8 |
+| compileDebugKotlin + testDebugUnitTest | PASS: 14 tests (SendCommandPolicyTest 10, CloudConfigRestoreTest 3, ExampleUnitTest 1), 0 failures |
+| git commit | d9f4dde "fix: at-most-once SEND_CMD execution, real sent callbacks, broker restore" |
+| Index EOL after commit | i/lf confirmed on sampled files (core.autocrlf=true only affects checkout) |
+
+Committed 23 files (12 modified, 11 added) including this .planning directory. Working tree clean. No push.
+Helper scripts written outside the repo: C:\\Users\\admin\\AgentDock\\dsim_chk.sh, dsim_chk2.sh, dsim_commit_msg.txt.

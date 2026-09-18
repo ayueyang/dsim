@@ -1,10 +1,11 @@
 # Recovery checkpoint — 2026-09-18
 
 ## Current status
-First repair batch implemented and targeted verification passed. No pending code upload.
+First repair batch implemented, verified and COMMITTED as d9f4dde (not pushed).
 Project: C:\Users\admin\AndroidStudioProjects\dSIM
-Baseline HEAD: 82c84f0. Edits are uncommitted; do not reset them.
-AgentDock task: tsk_127a9a127067171c (first-batch scope only).
+Previous baseline: 82c84f0. Current HEAD: d9f4dde. Working tree clean as of commit.
+AgentDock tasks: tsk_127a9a127067171c (implementation), tsk_1dd1ab5cfda65306 (commit).
+Next work should branch from d9f4dde; nothing uncommitted remains from the first batch.
 
 ## Read next
 1. task_plan.md
