@@ -44,7 +44,7 @@
 | 哨兵字符串比较 | 0（W5 前 11 处） | `encryptOrNull()` 返回可空，哨兵已删 |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
-| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCostPolicyTest / ReplayGuardTest / SendCommandLedgerTest / SyncOutboxDaoTest |
+| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCostPolicyTest / ReplayGuardTest / CredentialCodecTest / SendCommandLedgerTest / SyncOutboxDaoTest |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
 ---
@@ -66,7 +66,7 @@
 | W11 | P2 | 死代码清理（5 个对象） | S | — |
 | W12 | P2 | 文案进 `strings.xml` | L | 建议在 W4/W5 后 |
 | W13 | P2 | 颜色进 `colors.xml` | M | — |
-| W14 | P3 | 口令存储加固（EncryptedSharedPreferences） | M | — |
+| W14 ✅ | P3 | 口令存储加固（EncryptedSharedPreferences） | M | — |
 | W15 | **P3 ✅ 已完成** | debug 工具不进 release（清单分变体 + `BuildConfig.DEBUG`） | S | — |
 | W16 | P3 | 发布工程化（签名/混淆/版本号） | M | — |
 | W17 | P3 | 通知 id 稳定化 | S | — |

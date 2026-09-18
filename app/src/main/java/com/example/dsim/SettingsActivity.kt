@@ -204,6 +204,21 @@ class SettingsActivity : AppCompatActivity() {
         refreshCloudConnectionUi()
         refreshSystemHistoryImportUi()
         startQueueRefreshTicker()
+        showCredentialsResetNoticeIfAny()
+    }
+
+    /** W14: the sealed password became unreadable (Keystore key lost) and was wiped. Say so once. */
+    private fun showCredentialsResetNoticeIfAny() {
+        val reason = CloudSettingsManager.consumeCredentialsResetNotice(this) ?: return
+        AlertDialog.Builder(this)
+            .setTitle("云端凭据已重置")
+            .setMessage(
+                "本机的安全密钥不可用（通常发生在恢复出厂设置或系统更新后），保存的房间号与口令已被清除。" +
+                    "请重新填写房间号和加密口令后再连接。（原因代码：$reason）"
+            )
+            .setPositiveButton("知道了", null)
+            .show()
+        refreshCloudConnectionUi()
     }
 
     override fun onPause() {
