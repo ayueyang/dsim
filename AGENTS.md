@@ -51,6 +51,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 能力   SmsSourceResolver / PrivacyModeManager / OtpRulesStore / UsageModeManager
        SenderColorUtils / ConversationProfileStore / DeviceDirectoryManager
 同步   MqttSyncService(前台服务·协议中枢) / HistorySyncQueueManager / DsimCryptoUtils
+       CloudTopics(topic 布局) / HeartbeatPolicy(快照发布决策) / SyncOutbox(发件箱)
 采集   SmsReceiver(+SmsReceivedReceiver) / SystemSmsHistoryImporter / HardwareProbeUtils
 数据   Room DsimDatabase v7 (6 实体：send_commands 执行账本、sync_outbox 同步发件箱) + 9 组 SharedPreferences
 ```
@@ -68,7 +69,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 |---|---|---|
 | C1 | 改 `@Entity` 字段必须同时递增 `@Database(version)` 并补一条 `Migration` | `exportSchema = false`，没有 schema diff 会提醒你。漏了会直接崩在老用户的升级路径上 |
 | C2 | `sms_messages.uuid` 的唯一索引不能去掉 | 跨设备记录去重依赖它；发送副作用另外依赖 send_commands 的原子认领。`MIGRATION_4_5` 专门为此做过数据清洗 |
-| C3 | 加密写入必须走 `DsimCryptoUtils.encryptMessage`，不要自己拼装格式 | 统一走 V2（`DSM2` 魔数 + PBKDF2 + AES-GCM）。改格式时必须新增魔数；仅存在已发布旧设备时保留读取分支，当前 V1 已移除，不能原地改语义 |
+| C3 | 加密写入必须走 `DsimCryptoUtils.encryptMessage`，不要自己拼装格式 | 统一走 V3（`DSM3` 魔数 + 每口令一次 PBKDF2 派生主密钥 + 每条随机 IV 的 AES-256-GCM，AAD=魔数）。改格式时必须新增魔数；仅存在已发布旧设备时保留读取分支，V1/V2 读取路径均已移除，不能原地改语义。派生固定盐 `dSIM/v3/master-key`、12 万轮，改任一项即等于改格式 |
 | C4 | 密钥派生自**口令**，与 MQTT Topic 无关 | 历史上形参名曾叫 `topic`，导致多次误判。V2 已改名 `secret`，别再改回去 |
 | C5 | Manifest 里默认短信应用的必须组件不能删 | `SmsReceiver`、`ComposeSmsActivity`、`HeadlessSmsSendService`、`MmsReceiver`。少一个系统就拒绝授予默认短信角色（后三者目前仍是占位实现，见 §6） |
 | C6 | 两个短信接收器的动作互斥规则不能破坏 | 默认短信应用只处理 `SMS_DELIVER`，非默认只处理 `SMS_RECEIVED`。破坏它会收到重复短信 |
@@ -78,6 +79,8 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C10 | 发信链路必须以 `uuid` 贯穿，落库前用 `dao.checkUuidExists` 判重 | 否则重发/回声会产生重复会话记录；实际发信前还必须原子认领 send_commands，不可用 status=0 短信行代替执行记录 |
 | C11 | 新增"必须送达对端"的云端发布点时，走 `SyncOutbox`（先落 `sync_outbox` 再由服务冲刷），不要直接 `globalMqttClient.publish` | 直接发布在断连时静默丢失。心跳 / PING / PONG 这类可丢的状态消息例外，可以直发 |
 | C12 | MQTT 必须保持 clientId = `dSIM_<deviceId>`、`cleanSession=false`、文件持久化 | Broker 端为离线设备排队 QoS1 消息依赖持久会话；改成随机 clientId 或 cleanSession=true 会让对端离线期间的短信全部丢失 |
+| C13 | 发布只能发到 `CloudTopics.publishTopic(base, 本机 deviceId)`（即 `<base>/<deviceId>`），订阅只能订 `<base>/+`；不要往 `base` 本身发布 | 自身回声靠 topic 后缀在解密前丢弃（`messageArrived` 第一行）。发到 `base` 的报文所有人都要解密一次才能识别，且发送者身份无法从 topic 得到 |
+| C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---
 
@@ -186,7 +189,7 @@ dSIM/
 7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
 8. **清理死代码**：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`SendCmdPayload.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`。
 9. **文案与配色去硬编码**：中文字符串应进 `strings.xml`（当前 `R.string.*` 使用次数为 0），界面色值应进 `colors.xml`。
-10. **自身回声日志级别**：客户端订阅的 topic 与发布 topic 相同且未用 MQTT no-local，自己发的 PING/PONG 会回环并落到「无 sms 载荷」分支打 WARNING，每 20 秒一条。行为正确但日志误导，建议提前静默返回。
+10. ~~自身回声日志级别~~ 已解决（批次 B）：发布 topic 带设备后缀，`messageArrived` 按 topic 丢弃自身回声，不再解密也不再打 WARNING。
 
 ---
 
@@ -196,7 +199,8 @@ dSIM/
 |---|---|
 | 给短信加字段 | `DsimEntities.kt` → 递增 `DsimDatabase` 版本 + 新增 `Migration` → 检查所有 `SmsMessage(...)` 构造点与 `SystemSmsHistoryImporter` 的字段映射 → 迁移测试里把假版本号链到最新版（`SendCommandLedgerTest` / `SyncOutboxDaoTest` 的写法） |
 | 加一种"必须送达"的云端消息 | 加 `SyncOutbox.KIND_*` → 构造 `SyncOutboxEntry` 入队 → 由现有 `flush` 发送；对端解析仍在 `handleIncomingMessage` |
-| 加一种云端消息 | `MqttSyncService` 加 `MQTT_ACTION_*` 常量 → `handleIncomingMessage` 按顺序插分支 → 对应 `handle*` 函数 → 若要回执，补 `targetDeviceId` 校验 |
+| 加一种云端消息 | `MqttSyncService` 加 `MQTT_ACTION_*` 常量 → `handleIncomingMessage` 按顺序插分支 → 对应 `handle*` 函数 → 若要回执，补 `targetDeviceId` 校验。发布用 `CloudTopics.publishTopic(...)`（C13） |
+| 让 PONG 多带一个字段 | 改 `publishDeviceSnapshot` 的 JSON → 若对端会渲染它，同时把它加进 `HeartbeatPolicy.fingerprint(...)`，否则变化不会触发发布 |
 | 加一个设置项 | `SettingsActivity`（含 `insertUsageModeSection` 附近）→ 若需持久化，优先落在既有 prefs 文件而非新建 → 同步更新架构文档 §5 与 §12.2 |
 | 改通知文案 | `MqttSyncService.buildXxxMessage()` 与 `NotificationUtils` |
 | 加号码脱敏场景 | 调用 `PrivacyModeManager` 的显示包装方法，**不要**自己在界面里写打码逻辑 |

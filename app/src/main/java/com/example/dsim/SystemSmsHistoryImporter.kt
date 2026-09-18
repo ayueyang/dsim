@@ -534,7 +534,7 @@ object SystemSmsHistoryImporter {
                 val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
                     qos = 1
                 }
-                client.publish(topic, message)
+                client.publish(CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(context)), message)
 
                 val deadlineAt = System.currentTimeMillis() + HISTORY_ACK_TIMEOUT_MS
                 while (System.currentTimeMillis() < deadlineAt) {

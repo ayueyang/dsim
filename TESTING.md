@@ -179,8 +179,8 @@ for tag,ser in (('A','emulator-5554'),('B','emulator-5556')):
 # 前台服务在跑
 adb -s emulator-5554 shell "dumpsys activity services com.example.dsim | grep -c isForeground=true"
 
-# PING/PONG 在广播（每 20 秒一次快照）
-adb -s emulator-5554 logcat -d | grep dSIM_SyncService | tail -3
+# 已订阅 <topic>/+ 并发布到 <topic>/<deviceId>；PONG 只在状态变化或每 120 秒发一次
+adb -s emulator-5554 logcat -d -s dSIM_SyncService:D | grep -E "subscribed|PONG published" | tail -3
 ```
 
 ---
@@ -303,17 +303,11 @@ for tag in ('A','B'):
 
 `emulator -help-all` 中没有任何多 SIM 开关（只有 `-no-sim`）。多卡场景只能靠多设备覆盖。
 
-### 5.4 应用会收到自己发出的消息并打 WARNING 日志
+### 5.4 自身回声（已解决）
 
-因为客户端订阅的 topic 与发布 topic 相同且未设置 MQTT 的 no-local 选项，
-自己发的 PING/PONG 会回环回来，落到 `handleIncomingMessage` 末尾的"无 sms 载荷"分支：
+每台设备发布到 `<topic>/<deviceId>`、订阅 `<topic>/+`，自己发的报文回环时在 `messageArrived` 里按 topic 后缀直接丢弃（`D dSIM_SyncService: skip own echo on ...`），不解密、不打 WARNING。若仍看到「忽略不包含 sms 载荷」的 WARNING，说明是**别的**设备发来了未知动作。
 
-```
-W dSIM_SyncService: 忽略不包含 sms 载荷的云端消息: {"action":"PING","deviceId":"..."}
-```
-
-行为是**正确**的（不重复处理），但日志级别是 WARNING，每 20 秒刷一条，排查时容易被误导。
-建议改为按 action 提前静默返回。
+用外部客户端旁听一个同步组（口令 → 主密钥用 `hashlib.pbkdf2_hmac("sha256", pw, b"dSIM/v3/master-key", 120000, 32)`，AES-GCM AAD 为 `b"DSM3"`）时，订阅 `<topic>/+`；`am force-stop` 应用后 Broker 会代发 `{"action":"OFFLINE"}` 的 Last Will。
 
 ### 5.5 `ANDROID_ID` 对应用按签名作用域隔离
 

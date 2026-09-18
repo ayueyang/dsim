@@ -527,7 +527,10 @@ class SmsChatActivity : AppCompatActivity() {
         val message = MqttMessage(encryptedPayload.toByteArray(Charsets.UTF_8)).apply {
             qos = 1
         }
-        MqttSyncService.globalMqttClient?.publish(topic, message)
+        MqttSyncService.globalMqttClient?.publish(
+            CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(this@SmsChatActivity)),
+            message
+        )
     }
 
     inner class SenderOptionAdapter(

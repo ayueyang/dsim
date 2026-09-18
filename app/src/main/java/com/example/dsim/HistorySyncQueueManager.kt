@@ -344,7 +344,7 @@ object HistorySyncQueueManager {
         val message = MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply {
             qos = 1
         }
-        client.publish(topic, message)
+        client.publish(CloudTopics.publishTopic(topic, requesterId), message)
 
         handleQueueBatch(
             context = context,

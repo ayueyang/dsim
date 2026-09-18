@@ -431,25 +431,26 @@ SmsChatActivity.sendCommand
 
 ### 8.1 线上格式
 
-**V2（当前写入格式，认证加密）**
+**V3（当前写入格式，认证加密，2026-09-18 批次 B）**
 
 ```
-[4B 魔数 "DSM2"][16B 随机盐][12B GCM IV][密文][16B GCM 认证标签]
-密钥 = PBKDF2-HMAC-SHA256(口令, 盐, 120_000 轮, 256 bit)
+[4B 魔数 "DSM3"][12B GCM IV][密文][16B GCM 认证标签]        AAD = 魔数
+主密钥 = PBKDF2-HMAC-SHA256(口令, 固定盐 "dSIM/v3/master-key", 120_000 轮, 256 bit)
 ```
 
-盐与 IV 每条报文重新随机生成并随报文一起传输，因此各端只需共享口令即可互解，不需要额外的密钥交换。
+主密钥**每个口令只派生一次**并在进程内缓存（LRU，上限 4 个口令）；IV 每条报文随机。各端只需共享口令即可互解。
 
-**V1 已移除**：当前只接受 DSM2 魔数，不支持 V1 读取；无已发布旧设备，不预先保留兼容路径。
+**V1、V2 已移除**：当前只接受 DSM3 魔数。V2（`DSM2`，每条报文 16 字节随机盐 + 各自 PBKDF2）因收发双方每条报文都要跑 12 万轮而被替换；无已发布旧设备，不保留读取路径。
 
 ### 8.2 关键实现决策
 
 | 决策 | 理由 |
 |---|---|
-| 当前只读写 V2/DSM2 | 所有设备应采用相同协议版本 |
+| 当前只读写 V3/DSM3 | 所有设备应采用相同协议版本 |
+| 固定盐 + 每口令一次派生 | 随机每条盐只在"同口令跨多条报文可被预计算表攻击"时有意义；这里口令本身就是组的共享密钥，攻击者需要的是口令而非某条报文，固定应用盐不降低实际安全性，却把每条报文的 CPU 从 0.2~0.5 秒降到微秒级 |
 | 用魔数而非版本号字节区分格式 | V1 报文开头是随机 IV，单字节版本号有 1/256 概率误判；4 字节魔数把误判概率降到 2⁻³² |
 | 自行实现 PBKDF2（RFC 8018 §5.2） | `SecretKeyFactory("PBKDF2WithHmacSHA256")` 需要 API 26，而 minSdk = 24。若按 API 级别回退到 `PBKDF2WithHmacSHA1`，同一口令在不同 Android 版本上会派生出**不同**密钥，导致跨设备静默解密失败。固定使用 HmacSHA256 可保证各端一致 |
-| 迭代轮数 120,000 | 中端机单次派生约 0.2~0.5 秒；设备快照心跳周期为 20 秒，CPU 占空比可忽略 |
+| 迭代轮数 120,000 | 中端机单次派生约 0.2~0.5 秒；V3 下每个口令只派生一次（首次连接或改口令），之后每条报文零派生 |
 | 移除 `topic.padEnd(KEY_SIZE, 'd')` | SHA-256 输出长度恒为 32 字节、与输入长度无关，该补位对结果无任何影响，属无副作用的死代码。当前不再提供 V1 派生或读取路径 |
 
 ### 8.3 升级操作要求
@@ -851,7 +852,7 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 
 考虑到系统里存在加密协议、状态机、多设备时序与数据迁移这些高回归风险区域，建议优先补齐：
 
-1. `DsimCryptoUtils` 的 DSM2 加解密往返、篡改拒收与错误口令拒收用例；
+1. ~~`DsimCryptoUtils` 的加解密往返、篡改拒收与错误口令拒收用例~~（已补：`DsimCryptoUtilsTest`，DSM3）；
 2. `HistorySyncQueueManager` 的状态迁移用例；
 3. `PrivacyModeManager` 的号码变体匹配用例；
 4. Room 迁移 v1→v6 的逐级用例（已补 v5→v6 定向测试）。
@@ -900,7 +901,7 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 | R1 | 守护进程被系统回收 | 依赖前台服务 + `START_STICKY` + 开机广播。在国产 ROM 的省电策略下仍可能被清理，需用户手动加入白名单 |
 | R2 | 去重时间窗 | 系统库与应用库去重均依赖 ±2 分钟窗口。若同一条短信在窗口外被重复导入，会产生重复记录 |
 | R3 | 状态迁移依赖文案匹配 | `HistorySyncQueueManager` 通过"阶段文案是否含『完成』/『失败』"判断终态，对文案改动敏感，属脆弱设计 |
-| R4 | 快照节流与心跳叠加 | 心跳周期 20 秒、节流阈值 1.2 秒。多设备（>10）同时在线时 Broker 侧流量与客户端解析压力需实测 |
+| R4 | 快照节流与心跳叠加 | 心跳 tick 30 秒，但只在指纹变化或 120 秒静默后发布（`HeartbeatPolicy`）；每台设备发布到 `<base>/<deviceId>`，订阅 `<base>/+`，自身回声不解密。多设备（>10）同时在线时 Broker 侧流量与客户端解析压力仍需实测 |
 | R5 | `exportSchema = false` | 迁移正确性无法自动化校验 |
 
 ### 19.3 代码卫生
@@ -1034,8 +1035,10 @@ dSIM/
 | `CHANNEL_LOUD` | `dsim_loud_v1` | NotificationUtils |
 | `CHANNEL_SILENT` | `dsim_silent_v1` | NotificationUtils |
 | `DEFAULT_BROKER` | `tcp://broker.emqx.io:1883` | CloudSettingsManager |
-| `AEAD_MAGIC` | `DSM2` | DsimCryptoUtils |
-| `AEAD_SALT_SIZE` | 16 字节 | DsimCryptoUtils |
+| `AEAD_MAGIC` | `DSM3` | DsimCryptoUtils |
+| `appSalt` | `"dSIM/v3/master-key"`（固定） | DsimCryptoUtils |
+| `KEY_CACHE_LIMIT` | 4 个口令 | DsimCryptoUtils |
+| `HeartbeatPolicy.TICK_MS` / `MAX_SILENCE_MS` | 30,000 / 120,000 毫秒 | HeartbeatPolicy |
 | `AEAD_IV_SIZE` | 12 字节 | DsimCryptoUtils |
 | `AEAD_TAG_BITS` | 128 | DsimCryptoUtils |
 | `AEAD_KEY_BITS` | 256 | DsimCryptoUtils |
@@ -1043,7 +1046,7 @@ dSIM/
 | `ENCRYPTION_ERROR` | `"ENCRYPTION_ERROR"` | DsimCryptoUtils（哨兵值） |
 | `TOTAL_STEPS` | 6 | OnboardingActivity |
 | `ANTI_FRAUD_COUNTDOWN_MS` | 8,000 毫秒 | OnboardingActivity |
-| `ONLINE_TIMEOUT_MS` | 45,000 毫秒 | DeviceDirectoryManager |
+| `ONLINE_TIMEOUT_MS` | 300,000 毫秒（5 分钟；OFFLINE/LWT 会提前置离线） | DeviceDirectoryManager |
 | `HISTORY_MIN_INTERVAL_MS` | 60,000 毫秒 | DeviceDirectoryManager |
 | `DEVICE_SNAPSHOT_INTERVAL_MS` | 20,000 毫秒 | MqttSyncService |
 | `SNAPSHOT_BROADCAST_MIN_INTERVAL_MS` | 1,200 毫秒 | 两处 |

@@ -369,7 +369,10 @@ class DeviceManagerActivity : AppCompatActivity() {
             ).apply {
                 qos = 1
             }
-            MqttSyncService.globalMqttClient?.publish(topic, message)
+            MqttSyncService.globalMqttClient?.publish(
+                CloudTopics.publishTopic(topic, HardwareProbeUtils.getDeviceId(this@DeviceManagerActivity)),
+                message
+            )
             true
         } catch (_: Exception) {
             false

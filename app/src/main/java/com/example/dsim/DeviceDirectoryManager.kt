@@ -7,7 +7,11 @@ import com.example.dsim.database.DsimDatabase
 import org.json.JSONObject
 
 object DeviceDirectoryManager {
-    const val ONLINE_TIMEOUT_MS = 45_000L
+    /**
+     * A connected peer publishes at least every [HeartbeatPolicy.MAX_SILENCE_MS]; allow 2.5× for
+     * network jitter. Unclean disconnects are announced sooner via the MQTT Last Will (OFFLINE).
+     */
+    const val ONLINE_TIMEOUT_MS = 5 * 60_000L
     private const val HISTORY_MIN_INTERVAL_MS = 60_000L
     private const val QUEUE_STATE_STALE_PROTECTION_WINDOW_MS = 2 * 60_000L
 
@@ -81,6 +85,20 @@ object DeviceDirectoryManager {
 
     fun isOnline(profile: DeviceProfile, now: Long = System.currentTimeMillis()): Boolean {
         return now - profile.lastSeenAt <= ONLINE_TIMEOUT_MS
+    }
+
+    /**
+     * Peer announced OFFLINE (explicit disconnect or broker Last Will). Push `lastSeenAt` behind the
+     * online window so the UI flips immediately instead of waiting for the timeout. History rows
+     * are untouched; the next PONG restores the profile as usual.
+     */
+    suspend fun markOffline(context: Context, deviceId: String, now: Long = System.currentTimeMillis()) {
+        val dao = DsimDatabase.getDatabase(context).dsimDao()
+        val profile = dao.getDeviceProfile(deviceId) ?: return
+        if (profile.isLocalDevice) return
+        val offlineSeenAt = now - ONLINE_TIMEOUT_MS - 1
+        if (profile.lastSeenAt <= offlineSeenAt) return
+        dao.saveDeviceProfile(profile.copy(lastSeenAt = offlineSeenAt))
     }
 
     fun formatPhoneNumbers(raw: String): String {

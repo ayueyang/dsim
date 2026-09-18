@@ -37,6 +37,11 @@ android {
         jvmTarget = "17"
     }
     
+    testOptions {
+        // JVM tests exercise DsimCryptoUtils failure paths, which log via android.util.Log.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

@@ -95,6 +95,7 @@ object SyncOutbox {
         flushMutex.withLock {
             val dao = DsimDatabase.getDatabase(context).dsimDao()
             val group = groupFingerprint(config)
+            val publishTopic = CloudTopics.publishTopic(config.topic, HardwareProbeUtils.getDeviceId(context))
             var sent = 0
             var dropped = 0
             var failed = 0
@@ -121,7 +122,7 @@ object SyncOutbox {
                             dao.markOutboxAttempt(entry.id, "encrypt_failed"); failed++; break@loop
                         }
                         // Blocking QoS 1 publish: returns after PUBACK. Only then is the row removed.
-                        active.publish(config.topic, MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
+                        active.publish(publishTopic, MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
                         dao.deleteOutboxEntry(entry.id)
                         sent++
                     } catch (e: CancellationException) {

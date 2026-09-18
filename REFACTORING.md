@@ -44,7 +44,7 @@
 | 哨兵字符串比较 | 11 处 `"ENCRYPTION_ERROR"` | |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 4 个 | 见 W10 |
-| 有效测试 | 0（2026-09-18 晚：JVM 21 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
+| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / SendCommandLedgerTest / SyncOutboxDaoTest |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
 ---
@@ -72,7 +72,7 @@
 | W17 | P3 | 通知 id 稳定化 | S | — |
 | W18 | P3 | 测试补齐（4 类纯逻辑） | M | W5 后更好做 |
 | W19 | **P0 ✅ 已完成** | 入站短信可靠同步：`sync_outbox` + 持久 MQTT 会话 | M | — |
-| W20 | **P0** | 耗电：口令→主密钥一次派生（新魔数 DSM3）、按 topic 后缀跳过自身回声、心跳放宽 | M | 改线上格式，遵守 C3 |
+| W20 | **P0 ✅ 已完成** | 耗电：口令→主密钥一次派生（新魔数 DSM3）、按 topic 后缀跳过自身回声、心跳按变化发布 + LWT OFFLINE | M | 详见 `FIXES_2026-09-18.md` 第三批 |
 | W21 | P1 | 发送回执 / 历史 ACK 也走 `SyncOutbox`（W19 未覆盖） | S | W19 |
 
 ---
@@ -350,8 +350,8 @@
 > | 批次 | 条目 | 状态 |
 > |---|---|---|
 > | A | W19 发件箱 + 持久会话 | ✅ 已完成 |
-> | B | W20 KDF 一次派生 + 按 topic 跳过回声 + 心跳放宽 | 下一步 |
-> | C | 一行修复合集：PONG Toast 去掉、`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | |
+> | B | W20 KDF 一次派生 + 按 topic 跳过回声 + 心跳放宽（PONG Toast 已顺手去掉） | ✅ 已完成 |
+> | C | 一行修复合集：`SmsReceivedReceiver` 加 `BROADCAST_SMS` 权限、`.gitattributes`、W15 | 下一步 |
 > | D | 安全：backup 规则排除 prefs/DB（W14 前置）、14 处 `dSIM_UI_PREFS` 直读收口到 `CloudSettingsManager`、默认 `ssl://` | |
 > | E | W10 + W11 + 删 hivemq 依赖 → W5 → W4 → W6/W7 | |
 > | F | W21、W2、W3、W8、W12、W13、W9、W16–W18 | |
@@ -380,7 +380,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 加密升级为 AES-256-GCM + PBKDF2 | 已做（`d95ea67`），PBKDF2 已过 RFC 向量与 Python 交叉校验 |
+| 加密升级为 AES-256-GCM + PBKDF2 | 已做（`d95ea67`），PBKDF2 已过 RFC 向量与 Python 交叉校验；2026-09-18 批次 B 升为 DSM3（固定盐、每口令一次派生），Python `hashlib.pbkdf2_hmac` + `AESGCM` 交叉解密通过 |
 | V1 旧格式兼容 | **已移除**（`f906653`），勿再加 |
 | 4 处中文乱码 | 已修（`d95ea67`） |
 | 多设备 ICCID 碰撞 | 已用 ICC Profile 根治（`0f6b445`，`test-fixtures/icc/`） |

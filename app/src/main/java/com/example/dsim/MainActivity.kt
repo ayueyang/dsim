@@ -273,7 +273,10 @@ class MainActivity : AppCompatActivity() {
                                             val encrypted = com.example.dsim.DsimCryptoUtils.encryptMessage(payloadJson, password)
                                             
                                             val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 }
-                                            com.example.dsim.MqttSyncService.globalMqttClient?.publish(topic, mqttMsg)
+                                            com.example.dsim.MqttSyncService.globalMqttClient?.publish(
+                                                com.example.dsim.CloudTopics.publishTopic(topic, com.example.dsim.HardwareProbeUtils.getDeviceId(this@MainActivity)),
+                                                mqttMsg
+                                            )
                                         }
 
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -444,7 +447,7 @@ class MainActivity : AppCompatActivity() {
                             if (encryptedBase64 != "ENCRYPTION_ERROR") {
                                 val mqttMsg = org.eclipse.paho.client.mqttv3.MqttMessage(encryptedBase64.toByteArray(Charsets.UTF_8))
                                 mqttMsg.qos = 1
-                                client.publish(currentTopic, mqttMsg)
+                                client.publish(CloudTopics.publishTopic(currentTopic, HardwareProbeUtils.getDeviceId(this@MainActivity)), mqttMsg)
                                 
                                 successCount++
                                 if (msg.timestamp > newWatermark) {
