@@ -446,6 +446,7 @@ SmsChatActivity.sendCommand
 | 决策 | 理由 |
 |---|---|
 | 当前只读写 V3/DSM3 | 所有设备应采用相同协议版本 |
+| 明文 JSON 必须带 `ts`（发送方毫秒时间）+ `nonce`（12 字节随机，base64url） | 接收端 `ReplayGuard`：缺失 / 与本机时钟偏差 > 10 分钟（OFFLINE 24 小时）/ 同发送者 nonce 重复 → 丢弃并 WARN（每种原因每分钟一条）。设备时钟偏差超过 10 分钟会导致互相拒收，见 AGENTS C22 |
 | 固定盐 + 每口令一次派生 | 随机每条盐只在"同口令跨多条报文可被预计算表攻击"时有意义；这里口令本身就是组的共享密钥，攻击者需要的是口令而非某条报文，固定应用盐不降低实际安全性，却把每条报文的 CPU 从 0.2~0.5 秒降到微秒级 |
 | 用魔数而非版本号字节区分格式 | V1 报文开头是随机 IV，单字节版本号有 1/256 概率误判；4 字节魔数把误判概率降到 2⁻³² |
 | 自行实现 PBKDF2（RFC 8018 §5.2） | `SecretKeyFactory("PBKDF2WithHmacSHA256")` 需要 API 26，而 minSdk = 24。若按 API 级别回退到 `PBKDF2WithHmacSHA1`，同一口令在不同 Android 版本上会派生出**不同**密钥，导致跨设备静默解密失败。固定使用 HmacSHA256 可保证各端一致 |
@@ -1034,6 +1035,7 @@ dSIM/
 | `HeartbeatPolicy.TICK_MS` / `MAX_SILENCE_MS` | 30,000 / 120,000 毫秒 | HeartbeatPolicy |
 | `ReconnectPolicy.BASE_DELAY_MS` / `MAX_DELAY_MS` | 5,000 / 300,000 毫秒 | ReconnectPolicy（服务自管重连退避；Paho automaticReconnect 关闭） |
 | `SendCostPolicy.DEFAULT_DAILY_LIMIT` / `MAX_LIMIT` | 50 / 10,000 条 | SendCostPolicy（执行端每自然日代发计费条数上限，见 AGENTS C21） |
+| `ReplayGuard.DEFAULT_WINDOW_MS` / `OFFLINE_WINDOW_MS` / `DEFAULT_CAPACITY` | 600,000 / 86,400,000 毫秒 / 4096 条 | ReplayGuard（防重放窗口与 nonce LRU 容量） |
 | `AEAD_IV_SIZE` | 12 字节 | DsimCryptoUtils |
 | `AEAD_TAG_BITS` | 128 | DsimCryptoUtils |
 | `AEAD_KEY_BITS` | 256 | DsimCryptoUtils |

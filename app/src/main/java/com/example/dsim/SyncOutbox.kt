@@ -193,7 +193,10 @@ object SyncOutbox {
                         lastError = "not_connected"; failed++; break@loop
                     }
                     try {
-                        val encrypted = DsimCryptoUtils.encryptOrNull(entry.payloadJson, config.password)
+                        // F9: stamp ts/nonce now, not at enqueue - a row that waited out an outage
+                        // must not arrive stale.
+                        val stamped = MqttPayloadCodec.stamp(entry.payloadJson)
+                        val encrypted = DsimCryptoUtils.encryptOrNull(stamped, config.password)
                         if (encrypted == null) {
                             dao.markOutboxAttempt(entry.id, "encrypt_failed")
                             lastError = "encrypt_failed"; failed++; break@loop

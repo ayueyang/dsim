@@ -18,6 +18,22 @@ internal class MqttInboundHandler(
     private val session: CloudSession,
     private val publisher: MqttPublisher
 ) {
+    private val replayGuard = ReplayGuard()
+    private val lastRejectLogAt = java.util.EnumMap<ReplayGuard.Reason, Long>(ReplayGuard.Reason::class.java)
+
+    /** One WARN per reason per minute; a replay flood must not turn into a log flood. */
+    private fun logReplayReject(verdict: ReplayGuard.Verdict.Reject, inbound: MqttInbound, senderId: String) {
+        val now = System.currentTimeMillis()
+        val last = lastRejectLogAt[verdict.reason] ?: 0L
+        if (now - last < 60_000L) return
+        lastRejectLogAt[verdict.reason] = now
+        Log.w(
+            "dSIM_SyncService",
+            "replay guard rejected ${inbound::class.java.simpleName} from ${senderId.ifBlank { "?" }}: " +
+                "${verdict.reason} (${verdict.detail})"
+        )
+    }
+
     suspend fun handleIncomingMessage(encryptedBase64: String, senderFromTopic: String?) {
         if (!UsageModeManager.canUseCloud(context)) return
 
@@ -25,12 +41,23 @@ internal class MqttInboundHandler(
             val decryptedJson = DsimCryptoUtils.decryptMessage(encryptedBase64, session.password)
                 ?: return
 
-            val inbound = MqttPayloadCodec.decode(decryptedJson)
-            if (inbound == null) {
+            val envelope = MqttPayloadCodec.decodeEnvelope(decryptedJson)
+            if (envelope == null) {
                 Log.w("dSIM_SyncService", "忽略无法识别的云端消息: ${decryptedJson.take(200)}")
                 return
             }
+            val inbound = envelope.inbound
             val senderId = MqttPayloadCodec.senderId(inbound).ifBlank { senderFromTopic.orEmpty() }
+            // F9: freshness + uniqueness before any side effect. OFFLINE gets the wide window
+            // because the Last Will was stamped at connect time.
+            val window = if (inbound is Offline) ReplayGuard.OFFLINE_WINDOW_MS else ReplayGuard.DEFAULT_WINDOW_MS
+            val verdict = synchronized(replayGuard) {
+                replayGuard.check(senderId, envelope.ts, envelope.nonce, System.currentTimeMillis(), window)
+            }
+            if (verdict is ReplayGuard.Verdict.Reject) {
+                logReplayReject(verdict, inbound, senderId)
+                return
+            }
             val localDeviceId = HardwareProbeUtils.getDeviceId(context)
             // Defence in depth: the topic-level echo filter runs before decrypt, but a payload whose
             // deviceId claims to be us (replay onto a foreign sub-topic) must still be ignored.

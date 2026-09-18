@@ -53,7 +53,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 能力   SmsSourceResolver / PrivacyModeManager / OtpRulesStore / UsageModeManager
        SenderColorUtils / ConversationProfileStore / DeviceDirectoryManager
 同步   MqttSyncService(前台服务·协议中枢) / HistorySyncQueueManager / DsimCryptoUtils
-       CloudTopics(topic 布局) / HeartbeatPolicy(快照发布决策) / ReconnectPolicy(重连退避) / SendCostPolicy(代发费用闸) / SyncOutbox(发件箱)
+       CloudTopics(topic 布局) / HeartbeatPolicy(快照发布决策) / ReconnectPolicy(重连退避) / SendCostPolicy(代发费用闸) / ReplayGuard(防重放) / SyncOutbox(发件箱)
 采集   SmsReceiver(+SmsReceivedReceiver) / SystemSmsHistoryImporter / HardwareProbeUtils
 数据   Room DsimDatabase v7 (6 实体：send_commands 执行账本、sync_outbox 同步发件箱) + 9 组 SharedPreferences
 ```
@@ -89,6 +89,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C19 | `MqttSyncService` 的前台服务类型是 `remoteMessaging`（清单 + `startForeground(id, n, FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)` 二者必须一致），不可改回 `dataSync`；`startForeground` 只经 `promoteToForeground()`，被系统拒绝时 `stopSelf` 而不是让异常杀进程 | Android 15+（targetSdk 35+）禁止 `BOOT_COMPLETED` 拉起 `dataSync` 前台服务，改回去 = 开机自启崩溃、守护进程直到用户开 app 才起来；`dataSync` 另有 6 h/24 h 时长预算，常驻守护会被 `onTimeout` 掐掉。`SystemHistoryImportService` 是用户发起、有界的导入，保持 `dataSync` |
 | C20 | 重连由 `MqttSyncService` 自己负责：`setAutomaticReconnect(false)` 不可改回 true；`connectionLost` 与连接失败只能经 `scheduleReconnect()`（`ReconnectPolicy` 5 s 起倍增、封顶 5 min，单一 job），网络恢复经 `registerDefaultNetworkCallback` 立即重试；重建客户端前必须 `setCallback(null)` + `disconnectForcibly` + `close(true)` 旧实例 | Paho 的自动重连只覆盖「连上过之后断线」，首连失败永远不重试；而且它在后台重连时我们再 `close()`/新建同 clientId 客户端会互相踢，结果是「一次连接失败然后沉默」（批次 E 观察到的缺陷）。两套重连并存必然竞态，只能留一套 |
 | C21 | 远程代发（SEND_CMD 执行端）必须过两道费用闸：`CloudSettingsManager.isRemoteSendAllowed`（在 `MqttInboundHandler.handleSendCommand` 里、进 dispatcher 之前，拒绝时回 `SEND_CMD_RESULT success=false`）与 `SendCostPolicy.isOverLimit`（在 `OutgoingSmsDispatcher.submit` 里、`claimSendCommand` 之前、重复 UUID 分支之后）；请求端 `SmsChatActivity` 对多段短信必须先弹确认 | 每条运营商短信约 ¥0.1，由执行端付费。闸放在 claim 之后会留下永远不发的 PENDING 行；放在重复 UUID 分支之前会把「查询旧指令结果」也挡掉，请求端气泡永远卡在发送中。上限按 `send_commands` 当日 `partCount` 求和、`state != FAILED`（PENDING/UNKNOWN 可能已计费），0 = 不限 |
+| C22 | 每条云端载荷必须带 `ts`/`nonce` 信封（`MqttPayloadCodec.encode` 自动盖，发件箱行在 `SyncOutbox.flush` 里用 `stamp()` **重新盖**）；接收端在 `MqttInboundHandler` 解码后、任何副作用前过 `ReplayGuard`（缺失 / 偏差 > 10 min / 同发送者 nonce 重复 → 丢弃；OFFLINE 用 24 h 窗口）。不设兼容期：旧设备发的无信封消息会被拒 | 公共 broker 上任何人都能录下密文原样重放，SEND_CMD 靠 UUID 幂等但 PING/PONG/HISTORY_QUEUE_BATCH/OFFLINE 没有；在入队时盖章会让离线超过 10 min 的发件箱行到达即过期；Last Will 在连接时就已加密，窗口必须放宽。`ReplayGuard` LRU 4096 条有界，超容后最旧 nonce 可能被遗忘——窗口是硬保证，LRU 是窗口内的补充 |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---

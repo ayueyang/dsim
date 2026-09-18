@@ -95,4 +95,41 @@ class MqttPayloadCodecTest {
         assertTrue(!json.contains("\"state\""))
         assertTrue(!json.contains("\"message\""))
     }
+
+    @Test fun encodeStampsEnvelopeAndDecodeEnvelopeReadsIt() {
+        val before = System.currentTimeMillis()
+        val json = MqttPayloadCodec.encode(Ping(deviceId = "A"))
+        val env = MqttPayloadCodec.decodeEnvelope(json)!!
+        assertTrue(env.inbound is Ping)
+        assertTrue(env.ts!! >= before && env.ts!! <= System.currentTimeMillis())
+        assertTrue(env.nonce!!.length >= 16)
+        // two encodes of the same message never share a nonce
+        val json2 = MqttPayloadCodec.encode(Ping(deviceId = "A"))
+        assertTrue(MqttPayloadCodec.decodeEnvelope(json2)!!.nonce != env.nonce)
+    }
+
+    @Test fun stampReplacesExistingEnvelopeAndLeavesPayloadIntact() {
+        val original = MqttPayloadCodec.encode(SendCmd(uuid = "u1", target = "10086", body = "hi", mappingKey = "k", deviceId = "A"))
+        val first = MqttPayloadCodec.decodeEnvelope(original)!!
+        val restamped = MqttPayloadCodec.stamp(original, nowMs = first.ts!! + 3_600_000L)
+        val second = MqttPayloadCodec.decodeEnvelope(restamped)!!
+        assertEquals(first.ts!! + 3_600_000L, second.ts)
+        assertTrue(second.nonce != first.nonce)
+        assertEquals(first.inbound, second.inbound)
+        // exactly one ts / one nonce key in the output
+        assertEquals(1, Regex("\"ts\"").findAll(restamped).count())
+        assertEquals(1, Regex("\"nonce\"").findAll(restamped).count())
+    }
+
+    @Test fun legacyPayloadWithoutEnvelopeDecodesWithNullEnvelope() {
+        val env = MqttPayloadCodec.decodeEnvelope("""{"action":"PING","deviceId":"A"}""")!!
+        assertTrue(env.inbound is Ping)
+        assertEquals(null, env.ts)
+        assertEquals(null, env.nonce)
+    }
+
+    @Test fun stampLeavesNonObjectInputAlone() {
+        assertEquals("not json", MqttPayloadCodec.stamp("not json"))
+        assertEquals("[1,2]", MqttPayloadCodec.stamp("[1,2]"))
+    }
 }

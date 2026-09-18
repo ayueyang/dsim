@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
+import java.security.SecureRandom
+import java.util.Base64
 
 /**
  * Wire protocol for the encrypted MQTT group channel (W5).
@@ -129,11 +131,55 @@ data class Offline(
 /** An inbound [SyncPayload] (captured or history-imported SMS). */
 data class SmsSync(val payload: SyncPayload) : MqttInbound
 
+/** A decoded message together with its replay envelope (F9). */
+data class DecodedEnvelope(val inbound: MqttInbound, val ts: Long?, val nonce: String?)
+
 object MqttPayloadCodec {
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+    private val random = SecureRandom()
 
-    /** Serialise any control message or [SyncPayload]. Nulls are omitted. */
-    fun encode(message: Any): String = gson.toJson(message)
+    /** Envelope field names (F9). Every payload carries both; receivers reject anything without. */
+    const val FIELD_TS = "ts"
+    const val FIELD_NONCE = "nonce"
+
+    /**
+     * Serialise any control message or [SyncPayload] and stamp the replay envelope. Nulls are
+     * omitted. The stamp reflects "now": payloads that sit in the outbox must be re-stamped at
+     * flush time via [stamp], otherwise they arrive stale.
+     */
+    fun encode(message: Any): String = stamp(gson.toJson(message))
+
+    /**
+     * (Re)write `ts` / `nonce` on an already-encoded JSON object. Idempotent in shape: an existing
+     * envelope is replaced, not duplicated. Non-object input is returned unchanged.
+     */
+    fun stamp(json: String, nowMs: Long = System.currentTimeMillis()): String {
+        val obj = try {
+            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject ?: return json
+        } catch (_: JsonSyntaxException) {
+            return json
+        } catch (_: IllegalStateException) {
+            return json
+        }
+        obj.addProperty(FIELD_TS, nowMs)
+        obj.addProperty(FIELD_NONCE, newNonce())
+        return gson.toJson(obj)
+    }
+
+    private fun newNonce(): String {
+        val bytes = ByteArray(12)
+        random.nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /** [decode] plus the envelope; `ts`/`nonce` are null when absent or malformed. */
+    fun decodeEnvelope(json: String): DecodedEnvelope? {
+        val inbound = decode(json) ?: return null
+        val obj = JsonParser.parseString(json).asJsonObject
+        val ts = obj.get(FIELD_TS)?.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asLong }.getOrNull() }
+        val nonce = obj.get(FIELD_NONCE)?.takeIf { it.isJsonPrimitive }?.asString
+        return DecodedEnvelope(inbound, ts, nonce)
+    }
 
     /**
      * Parse decrypted JSON. Returns `null` for malformed JSON, unknown `action`, or an action-less
