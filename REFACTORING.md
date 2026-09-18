@@ -389,6 +389,7 @@
 | 模拟器回归脚本 | 已就绪，`verify-dsim.sh` 12/12 PASS |
 | 架构文档 | `dSIM 分布式多设备短信同步系统 技术架构说明书 V2.0.md`（依据源码核实） |
 | 旧技术文档 | `dSIM_技术文档_架构师版.md` 已废弃删除，可用 `git show 382d587` 找回 |
+| F8 备份规则 / F12+F16 prefs 收口 / F9 `ssl://` 默认与 topic 校验 | 已做（2026-09-18 批次 D）：备份与换机迁移改 deny-by-default；云端凭据统一走 `CloudSettingsManager`，静音标志走新增 `NotificationPreferences`；默认 broker 改 `ssl://broker.emqx.io:8883`（存量配置不迁移），保存入口拒绝含 `+`/`#` 的房间号 |
 
 ---
 

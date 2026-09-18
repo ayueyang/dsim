@@ -14,13 +14,13 @@ class BootReceiver : BroadcastReceiver() {
             if (!UsageModeManager.canUseCloud(context)) {
                 return
             }
-            val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
             val isAutoConnect = CloudSettingsManager.isAutoConnectEnabled(context)
-            val broker = prefs.getString("BROKER", "") ?: ""
-            val topic = prefs.getString("TOPIC", "")
-            val password = prefs.getString("PASSWORD", "")
+            val config = CloudSettingsManager.getConfig(context)
+            val broker = config.broker
+            val topic = config.topic
+            val password = config.password
 
-            if (isAutoConnect && !topic.isNullOrBlank() && !password.isNullOrBlank()) {
+            if (isAutoConnect && topic.isNotBlank() && password.isNotBlank()) {
                 android.util.Log.d("dSIM_Boot", "⚡ 检测到开机广播，且自动连接已开启，正在拉起幽灵隧道...")
                 val serviceIntent = Intent(context, MqttSyncService::class.java).apply {
                     action = MqttSyncService.ACTION_CONNECT

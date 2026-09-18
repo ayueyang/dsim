@@ -403,6 +403,15 @@ SEND_CMD 端到端已按 §5.2 实测跑通，不再列为缺口。
 - 权限限定与 debug 面板的验证步骤见 §3.2.1 / §3.2.2。
 - 行尾：`git ls-files --eol | grep w/crlf` 期望只剩 `gradlew.bat`（`.gitattributes` 有意保留它的 CRLF）。
 
+## 2026-09-18 安全加固回归（批次 D）
+
+- **TLS 连通**：改默认 broker 前先确认端点证书可被系统信任（宿主上 `ssl.create_default_context()` 握手 `broker.emqx.io:8883` 应 VERIFIED）。设备侧证据不是「没报错」，而是 `adb shell cat /proc/net/tcp6 | grep 22B3` 出现应用 uid 的 ESTABLISHED 行（`22B3` = 8883），配合 `logcat -s dSIM_SyncService` 的 `subscribed <base>/+`。
+- **改已装应用的 prefs**：`adb shell run-as <pkg> sh -c "sed -i ..."` 在本镜像上会因 run-as 无法继承外层重定向而失败（`Permission denied`）。可行路径是 `run-as cat` 导出 → 宿主改 → `adb push /data/local/tmp/` → `run-as cp` 覆盖，改前先 `am force-stop`，否则进程退出时会用内存里的旧值覆盖回去。
+- **备份排除必须做 A/B**：`bmgr fullbackup <pkg>` 在「没有可备份数据」和「传输层本身失败」两种情况下都可能不产出数据，单看一次结果不能下结论。正确做法是对照：deny 规则 → `PFTBT: Error -1002 … Transport rejected backup`；临时把规则换成空的宽松版本重新构建安装 → `Full backup completed with status: 0` 且无 -1002。跑完记得还原规则并重装。
+- 前置：`bmgr enabled` 若为 disabled 需 `bmgr enable true`，并 `bmgr transport com.android.localtransport/.LocalTransport`（Google 传输在无账号的模拟器上不可用）。生产镜像 `adb root` 不可用，所以读不到 localtransport 落盘目录，以 PFTBT 日志为准。
+- **回归短信链路**：TLS 生效后必须再跑一次真实入站短信（`adb emu sms send 10086 x`），期望 `dSIM_Receiver: Captured incoming SMS` + `dSIM_Outbox: flush sent=1 dropped=0 failed=0 remaining=0`。只验证「能连上」不够，要验证「连上之后同步仍然通」。
+- 单测：`:app:testDebugUnitTest` 期望 52/52，其中 `CloudSettingsManagerTest` 覆盖房间号校验表（`+`/`#`/空白/控制符/前导 `/`/`//`/超长）、broker 分类与提示文案完备性，纯 JVM 不依赖模拟器。
+
 ## 2026-09-18 正确性回归补充
 
 先读 `FIXES_2026-09-18.md`。`verify-dsim.sh` 仅覆盖其列出的烟雾场景；12/12 不能证明实际发送成功、命令不重复执行或全部设备落库。

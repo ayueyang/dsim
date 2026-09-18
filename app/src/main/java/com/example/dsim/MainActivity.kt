@@ -155,14 +155,14 @@ class MainActivity : AppCompatActivity() {
 
         // 读取保存的配置
         val sharedPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        etMqttBroker.setText(sharedPrefs.getString(KEY_MQTT_BROKER, "tcp://broker.emqx.io:1883"))
+        etMqttBroker.setText(sharedPrefs.getString(KEY_MQTT_BROKER, CloudSettingsManager.DEFAULT_BROKER))
         etMqttTopic.setText(sharedPrefs.getString(KEY_MQTT_TOPIC, ""))
-        
-        // 读取 UI 表单记忆
-        val uiPrefs = getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-        etMqttBroker.setText(uiPrefs.getString("BROKER", "tcp://broker.emqx.io:1883"))
-        etMqttTopic.setText(uiPrefs.getString("TOPIC", ""))
-        etMqttPassword.setText(uiPrefs.getString("PASSWORD", ""))
+
+        // 读取 UI 表单记忆（与设置页共用同一份云端配置）
+        val savedCloudConfig = CloudSettingsManager.getConfig(this)
+        etMqttBroker.setText(savedCloudConfig.broker)
+        etMqttTopic.setText(savedCloudConfig.topic)
+        etMqttPassword.setText(savedCloudConfig.password)
 
         // 绑定事件
         btnOpenInbox.setOnClickListener {
@@ -259,9 +259,9 @@ class MainActivity : AppCompatActivity() {
                                         )
                                         dao.insertMessage(mockMsg)
 
-                                        val prefs = getSharedPreferences("dSIM_UI_PREFS", android.content.Context.MODE_PRIVATE)
-                                        val password = prefs.getString("PASSWORD", "") ?: ""
-                                        val topic = prefs.getString("TOPIC", "") ?: ""
+                                        val cloudConfig = CloudSettingsManager.getConfig(this@MainActivity)
+                                        val password = cloudConfig.password
+                                        val topic = cloudConfig.topic
 
                                         if (password.isNotBlank() && topic.isNotBlank() && com.example.dsim.MqttSyncService.globalMqttClient?.isConnected == true) {
                                             val payloadObj = com.example.dsim.SyncPayload(
@@ -346,16 +346,17 @@ class MainActivity : AppCompatActivity() {
                         val topic = etMqttTopic.text.toString().trim()
                         val password = etMqttPassword.text.toString().trim()
                         
-                        if (topic.isBlank() || password.isBlank()) {
-                            tvReport.append("\n❌ 频道和密码不能为空！")
+                        val topicValidation = CloudSettingsManager.validateBaseTopic(topic)
+                        if (topicValidation is CloudSettingsManager.TopicValidation.Invalid) {
+                            tvReport.append("\n❌ " + CloudConfigMessages.topicError(topicValidation.reason))
                             return@setOnClickListener
                         }
-                        
-                        uiPrefs.edit()
-                            .putString("BROKER", broker)
-                            .putString("TOPIC", topic)
-                            .putString("PASSWORD", password)
-                            .apply()
+                        if (password.isBlank()) {
+                            tvReport.append("\n❌ 密码不能为空！")
+                            return@setOnClickListener
+                        }
+
+                        CloudSettingsManager.saveConfig(this@MainActivity, broker, topic, password)
                         
                         tvReport.append("\n正在启动工业级后台保活隧道: $topic ...")
                         val serviceIntent = Intent(this@MainActivity, MqttSyncService::class.java).apply {
@@ -676,10 +677,9 @@ class MainActivity : AppCompatActivity() {
         }
         
         val btnToggleMute = findViewById<android.widget.Button>(R.id.btnToggleMute)
-        val mutePrefs = getSharedPreferences("dSIM_UI_PREFS", android.content.Context.MODE_PRIVATE)
-        
+
         fun updateMuteButtonUi() {
-            val isMuted = mutePrefs.getBoolean("IS_MUTED", false)
+            val isMuted = NotificationPreferences.isMuted(this)
             if (isMuted) {
                 btnToggleMute.text = "通知状态：🔇 静音防打扰"
                 btnToggleMute.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#9E9E9E"))
@@ -691,10 +691,9 @@ class MainActivity : AppCompatActivity() {
         updateMuteButtonUi()
         
         btnToggleMute.setOnClickListener {
-            val currentMute = mutePrefs.getBoolean("IS_MUTED", false)
-            mutePrefs.edit().putBoolean("IS_MUTED", !currentMute).apply()
+            val nowMuted = NotificationPreferences.toggleMuted(this)
             updateMuteButtonUi()
-            val status = if (!currentMute) "已开启静音模式，通知将无声显示。" else "已开启响铃模式，将允许弹窗与震动。"
+            val status = if (nowMuted) "已开启静音模式，通知将无声显示。" else "已开启响铃模式，将允许弹窗与震动。"
             android.widget.Toast.makeText(this, status, android.widget.Toast.LENGTH_SHORT).show()
         }
         
@@ -713,8 +712,7 @@ class MainActivity : AppCompatActivity() {
                 mappingKey = "TEST_KEY"
             )
             
-            val testPrefs = getSharedPreferences("dSIM_UI_PREFS", android.content.Context.MODE_PRIVATE)
-            val isMuted = testPrefs.getBoolean("IS_MUTED", false)
+            val isMuted = NotificationPreferences.isMuted(this)
             if (isMuted) {
                 android.widget.Toast.makeText(this, "当前为静音模式，系统将仅进行无声静默推送", android.widget.Toast.LENGTH_SHORT).show()
             } else {

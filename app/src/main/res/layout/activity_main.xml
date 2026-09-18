@@ -244,9 +244,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
                     android:background="#F7F9FC"
-                    android:hint="MQTT 服务器，例如 tcp://broker.emqx.io:1883"
+                    android:hint="MQTT 服务器，例如 ssl://broker.emqx.io:8883"
                     android:padding="14dp"
-                    android:text="tcp://broker.emqx.io:1883"
+                    android:text="ssl://broker.emqx.io:8883"
                     android:textSize="14sp" />
 
                 <EditText

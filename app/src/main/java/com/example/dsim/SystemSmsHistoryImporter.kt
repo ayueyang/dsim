@@ -435,9 +435,9 @@ object SystemSmsHistoryImporter {
             return null
         }
 
-        val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-        val topic = prefs.getString("TOPIC", "").orEmpty().trim()
-        val password = prefs.getString("PASSWORD", "").orEmpty().trim()
+        val config = CloudSettingsManager.getConfig(context)
+        val topic = config.topic.trim()
+        val password = config.password.trim()
         val client = MqttSyncService.globalMqttClient
         if (topic.isBlank() || password.isBlank() || client == null || !client.isConnected) {
             return null

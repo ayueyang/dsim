@@ -57,8 +57,7 @@ object NotificationUtils {
 
         ensureChannelsExist(context)
 
-        val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-        val isMuted = prefs.getBoolean("IS_MUTED", false)
+        val isMuted = NotificationPreferences.isMuted(context)
         
         val targetChannel = if (isMuted) CHANNEL_SILENT else CHANNEL_LOUD
         val targetPriority = if (isMuted) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX

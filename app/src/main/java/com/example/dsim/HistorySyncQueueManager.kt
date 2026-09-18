@@ -289,9 +289,9 @@ object HistorySyncQueueManager {
             throw IllegalStateException("云端未连接")
         }
 
-        val prefs = context.getSharedPreferences("dSIM_UI_PREFS", Context.MODE_PRIVATE)
-        val topic = prefs.getString("TOPIC", "").orEmpty().trim()
-        val password = prefs.getString("PASSWORD", "").orEmpty().trim()
+        val config = CloudSettingsManager.getConfig(context)
+        val topic = config.topic.trim()
+        val password = config.password.trim()
         if (topic.isBlank() || password.isBlank()) {
             throw IllegalStateException("请先配置云端通道")
         }

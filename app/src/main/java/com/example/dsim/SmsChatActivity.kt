@@ -383,9 +383,9 @@ class SmsChatActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             var pendingUuid: String? = null
             try {
-                val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
-                val password = prefs.getString("PASSWORD", "") ?: ""
-                val topic = prefs.getString("TOPIC", "") ?: ""
+                val config = CloudSettingsManager.getConfig(this@SmsChatActivity)
+                val password = config.password
+                val topic = config.topic
                 val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
 
                 if (password.isBlank() || topic.isBlank()) {
@@ -460,9 +460,9 @@ class SmsChatActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
-                val password = prefs.getString("PASSWORD", "") ?: ""
-                val topic = prefs.getString("TOPIC", "") ?: ""
+                val config = CloudSettingsManager.getConfig(this@SmsChatActivity)
+                val password = config.password
+                val topic = config.topic
                 if (password.isBlank() || topic.isBlank()) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@SmsChatActivity, "缺少云端配置", Toast.LENGTH_SHORT).show()

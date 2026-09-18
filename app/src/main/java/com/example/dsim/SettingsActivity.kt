@@ -605,10 +605,9 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, DeviceManagerActivity::class.java))
         }
 
-        val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
-        switchMuteNotificationsSetting.isChecked = prefs.getBoolean("IS_MUTED", false)
+        switchMuteNotificationsSetting.isChecked = NotificationPreferences.isMuted(this)
         switchMuteNotificationsSetting.setOnCheckedChangeListener { _, isChecked ->
-            prefs.edit().putBoolean("IS_MUTED", isChecked).apply()
+            NotificationPreferences.setMuted(this, isChecked)
             Toast.makeText(
                 this,
                 if (isChecked) "新消息通知已静音" else "新消息通知已恢复响铃",
@@ -773,9 +772,12 @@ class SettingsActivity : AppCompatActivity() {
         val topic = etMqttTopicSetting.text.toString().trim()
         val password = etMqttPasswordSetting.text.toString().trim()
 
-        if (topic.isBlank()) {
-            etMqttTopicSetting.error = "请输入房间号（MQTT Topic）"
-            return false
+        when (val validation = CloudSettingsManager.validateBaseTopic(topic)) {
+            is CloudSettingsManager.TopicValidation.Invalid -> {
+                etMqttTopicSetting.error = CloudConfigMessages.topicError(validation.reason)
+                return false
+            }
+            is CloudSettingsManager.TopicValidation.Valid -> Unit
         }
         if (password.isBlank()) {
             etMqttPasswordSetting.error = "请输入加密密码"
@@ -811,10 +813,17 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        tvCloudConnectionStatus.text = when {
+        val baseStatus = when {
             isConnected -> "云端状态：已连接 ${config.topic}"
             hasConfig -> "云端状态：已保存配置，当前未连接"
             else -> "云端状态：未配置主题和口令"
+        }
+        // 明文 broker 只提示不拦截：已有用户的 tcp:// 配置仍然可用。
+        val brokerWarning = if (hasConfig) CloudConfigMessages.brokerWarning(config.broker) else null
+        tvCloudConnectionStatus.text = if (brokerWarning != null) {
+            "$baseStatus\n⚠️ $brokerWarning"
+        } else {
+            baseStatus
         }
 
         btnConnectCloudSetting.text = if (isConnected) "断开云端" else "连接云端"
@@ -1382,10 +1391,10 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
-        val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
-        val broker = prefs.getString("BROKER", "") ?: ""
-        val topic = prefs.getString("TOPIC", "") ?: ""
-        val password = prefs.getString("PASSWORD", "") ?: ""
+        val config = CloudSettingsManager.getConfig(this)
+        val broker = config.broker
+        val topic = config.topic
+        val password = config.password
         if (broker.isBlank() || topic.isBlank() || password.isBlank()) {
             return
         }

@@ -347,9 +347,9 @@ class DeviceManagerActivity : AppCompatActivity() {
         if (!UsageModeManager.canUseCloud(this)) {
             return false
         }
-        val prefs = getSharedPreferences("dSIM_UI_PREFS", MODE_PRIVATE)
-        val password = prefs.getString("PASSWORD", "") ?: ""
-        val topic = prefs.getString("TOPIC", "") ?: ""
+        val config = CloudSettingsManager.getConfig(this)
+        val password = config.password
+        val topic = config.topic
         if (password.isBlank() || topic.isBlank()) {
             return false
         }

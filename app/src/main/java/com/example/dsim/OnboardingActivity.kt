@@ -496,9 +496,12 @@ class OnboardingActivity : AppCompatActivity() {
         if (!hasAnyInput && allowBlank) {
             return true
         }
-        if (topic.isBlank()) {
-            etOnboardingTopic.error = "请输入房间号（MQTT Topic）"
-            return false
+        when (val validation = CloudSettingsManager.validateBaseTopic(topic)) {
+            is CloudSettingsManager.TopicValidation.Invalid -> {
+                etOnboardingTopic.error = CloudConfigMessages.topicError(validation.reason)
+                return false
+            }
+            is CloudSettingsManager.TopicValidation.Valid -> Unit
         }
         if (password.isBlank()) {
             etOnboardingPassword.error = "请输入加密密码"

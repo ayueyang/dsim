@@ -83,6 +83,8 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C11 | 新增"必须送达对端"的云端发布点时，走 `SyncOutbox`（先落 `sync_outbox` 再由服务冲刷），不要直接 `globalMqttClient.publish` | 直接发布在断连时静默丢失。心跳 / PING / PONG 这类可丢的状态消息例外，可以直发 |
 | C12 | MQTT 必须保持 clientId = `dSIM_<deviceId>`、`cleanSession=false`、文件持久化 | Broker 端为离线设备排队 QoS1 消息依赖持久会话；改成随机 clientId 或 cleanSession=true 会让对端离线期间的短信全部丢失 |
 | C13 | 发布只能发到 `CloudTopics.publishTopic(base, 本机 deviceId)`（即 `<base>/<deviceId>`），订阅只能订 `<base>/+`；不要往 `base` 本身发布 | 自身回声靠 topic 后缀在解密前丢弃（`messageArrived` 第一行）。发到 `base` 的报文所有人都要解密一次才能识别，且发送者身份无法从 topic 得到 |
+| C16 | 备份规则必须 deny-by-default：`backup_rules.xml` 与 `data_extraction_rules.xml` 排除**所有** domain，不要改成逐文件点名 | 备份规则是 allow-by-default 语义，没被 `<exclude>` 点名的一切都会进 Google Drive 备份与换机迁移。逐文件清单在下次改存储名时会静默失效，把明文口令和整个消息库漏出去。`<device-transfer>` 不受 `allowBackup` 约束，必须单独写 |
+| C17 | 房间号（base topic）在保存入口必须过 `CloudSettingsManager.validateBaseTopic`，云端凭据一律经 `CloudSettingsManager` 读写 | base topic 含 `+`/`#` 会让 C13 的 `<base>/<deviceId>` 变成非法发布目标、`<base>/+` 变成过宽订阅。直接 `getSharedPreferences("dSIM_UI_PREFS")` 读 BROKER/TOPIC/PASSWORD 会绕过校验与默认值，也挡死后续迁移到加密存储 |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
 ---
@@ -190,7 +192,7 @@ dSIM/
 3. **`mappingKey` 在 Root 模式下不含设备维度**：`mappingKey = ICCID_<iccid>`，而它又是 `sim_card_configs` 的主键。真实卡 ICCID 唯一所以平时不暴露，但**模拟器各实例共用同一 ICCID 时两张卡会碰撞**，导致对端卡的 `REMOTE_SHADOW` 不被创建、跨设备发信无法触发——已在多设备测试中实测到。**测试环境已用 ICC Profile 根治**（每台模拟器指定不同 ICCID，见 `TESTING.md` §5.1 与 `test-fixtures/icc/`）。若希望从应用侧根治，可考虑给键加设备维度或补唯一性兜底，但注意这会破坏「卡换机仍能识别」的既有语义，需要先想清楚。
 4. **`deviceId` 直接取自 `ANDROID_ID`**：Android 8+ 该值按应用签名作用域隔离，**debug 与 release 构建切换会让应用把自己当成新设备**，历史 `sms_message.deviceId` 与 `DeviceProfile.isLocalDevice` 判定会漂移。先明确安装级/可恢复身份语义；普通 prefs UUID 不能保证卸载重装或换签名后身份不变。
 5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
-6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前明文。迁移到 `EncryptedSharedPreferences`。
+6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前仍是明文，待迁移到 `EncryptedSharedPreferences`。批次 D 已做完两件事收窄风险：备份/迁移规则改为 deny-by-default（口令与 Room 库不再离开设备），且所有云端凭据读写已收口到 `CloudSettingsManager`（迁移时只需改一处）。迁移前要先想清楚密钥丢失（恢复出厂、Keystore 失效）后的降级路径。
 7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。
 8. **清理死代码**：`DsimMqttEngine.kt`、`DsimNetworkEngine.kt`、`SendCmdPayload.kt`、`res/layout/item_sms.xml`、`gradle/libs.versions.toml`。
 9. **文案与配色去硬编码**：中文字符串应进 `strings.xml`（当前 `R.string.*` 使用次数为 0），界面色值应进 `colors.xml`。
