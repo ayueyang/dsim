@@ -1,6 +1,7 @@
 package com.example.dsim
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONObject
 
 data class OtpRuleSettings(
@@ -100,7 +101,8 @@ object OtpRulesStore {
         }
         return try {
             JSONObject(raw)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("dSIM_OtpRules", "stored OTP rules are not valid JSON; starting empty", e)
             JSONObject()
         }
     }

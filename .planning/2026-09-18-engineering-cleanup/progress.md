@@ -60,3 +60,13 @@
   body "W5 probe sms" on the wire (first time the probe caught the outbound sync itself).
 - Gotcha: after `install -r` + launch, the service needs ~90 s on this emulator before "subscribed" appears; a probe run
   earlier sees nothing (not a regression). Check /proc/net/tcp6 for :22B3 ESTABLISHED before probing.
+
+## E4 (W6) — done
+- 18 silent catches / printStackTrace -> 0 (HardwareProbeUtils x10, MqttSyncService x3, MqttPublisher, DeviceManagerActivity,
+  OtpRulesStore, SmsListActivity x2, SystemSmsHistoryImporter). Removed a stale unused Gson import (W5 leftover).
+- SyncOutbox.FlushResult.lastError; flushOutbox notification shows failure reason when failed>0 && remaining>0.
+- Build: test + assembleDebug + assembleRelease(-x lintVital*) DONE exit=0, JVM 62/62.
+- Emulator: svc wifi/data disable -> Paho reports Connection lost (32109) and auto-reconnects when network returns;
+  inbound SMS captured during the outage flushed sent=1 after reconnect; notification returned to 守护进程常驻中.
+  The "connected but publish throws" branch was not reachable this way (Paho's own reconnect wins); covered by code review.
+- Gotcha: Windows PowerShell 5 reads .ps1 without BOM as GBK -> non-ASCII regex in scripts breaks; keep helper scripts ASCII.

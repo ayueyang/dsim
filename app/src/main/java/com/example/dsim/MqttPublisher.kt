@@ -246,8 +246,9 @@ internal class MqttPublisher(
                 buildOfflineJson(HardwareProbeUtils.getDeviceId(context)), session.password
             ) ?: return
             client.publish(localPublishTopic(), MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Best effort by design; the Last Will covers the unclean case.
+            Log.d("dSIM_SyncService", "OFFLINE publish skipped: ${e.message}")
         }
     }
 }

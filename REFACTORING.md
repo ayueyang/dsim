@@ -38,8 +38,8 @@
 | 单包平铺 | `com.example.dsim` 下 52 个文件 | 仅 `database/` 单独成包 |
 | `object` 单例 | 33 个 | 即全局可变状态 |
 | DI / ViewModel | 无 / 无 | 全部 `findViewById`，无 ViewBinding |
-| 兜底 catch | 63 处 `catch(...Exception...)` | 含多处 `catch(_: Exception){}` 静默吞掉 |
-| `printStackTrace` | 4 处 | |
+| 兜底 catch | 仍有多处，但 `catch(_: Exception){}` 静默吞掉 = 0（W6） | 每处至少 `Log.d/w` 并注明为何可忽略 |
+| `printStackTrace` | 0（W6 前 4 处） | |
 | 手工拼 JSON | 0（W5 前 15 处） | 协议全部经 `MqttPayloadCodec`；接收端 `when (inbound)` |
 | 哨兵字符串比较 | 0（W5 前 11 处） | `encryptOrNull()` 返回可空，哨兵已删 |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
@@ -58,7 +58,7 @@
 | W3 | **P0** | 历史同步状态机与文案解耦 | S | — |
 | W4 | P1 | 拆分 `MqttSyncService` — 第 1 步 ✅（批次 E：入站/出站抽出，1102 → 568 行）；第 2 步（连接管理）待 W7 一起 | L | — |
 | W5 | P1 | ✅ 协议消息数据类化 + 去哨兵字符串（批次 E） | M | — |
-| W6 | P1 | 错误处理与可观测性 | M | — |
+| W6 | P1 | ✅ 错误处理与可观测性（批次 E：静默 catch 清零、outbox 失败原因进通知） | M | — |
 | W7 | P1 | 并发与生命周期治理 | S/M | 与 W4 绑定 |
 | W8 | P1 | `mappingKey` 唯一性：补诊断日志（结构改造需人拍板） | S | — |
 | W9 | P2 | 包结构分层 | M | **放最后做** |
@@ -183,9 +183,13 @@
 
 ---
 
-### W6（P1）错误处理与可观测性
+### W6（P1）错误处理与可观测性 — ✅ 已完成（批次 E）
 
-**问题**：63 处兜底 `catch(...Exception...)`、4 处 `printStackTrace`、多处 `catch(_: Exception){}` 静默吞掉。失败退化为静默 no-op——例如 `SmsReceiver.publishIncomingSmsToCloud` 发布失败时用户完全无感知。
+**已做**：`catch (_: Exception)` 与 `printStackTrace` 归零（18 处；`HardwareProbeUtils` 的 OEM 探测回退用 `Log.d` + 注释，真实失败用 `Log.w(e)`）。`SyncOutbox.FlushResult` 新增 `lastError`（`not_connected` / `encrypt_failed` / 异常摘要 ≤40 字）；`MqttSyncService.flushOutbox` 在 `failed > 0 && remaining > 0` 时通知栏显示「N 条短信待同步，上次发送失败（原因），将自动重试」，下次成功冲刷后恢复常规文案。窄类型 `catch (_: JsonSyntaxException)` 等（`MqttProtocol` / `DsimCryptoUtils` / `PrivacyModeManager`）属于预期分支，保留。
+
+**验证说明**：模拟器断网测试中，Paho 先于 outbox 察觉连接丢失并走自动重连（`Connection lost (32109)` → `已恢复连接`），入站短信在重连后 `sent=1`；「已连接但 publish 抛异常」这条分支没有在真机上触发到，仅由代码路径与 `OutboxPolicyTest` 覆盖。
+
+**原问题**：63 处兜底 `catch(...Exception...)`、4 处 `printStackTrace`、多处 `catch(_: Exception){}` 静默吞掉。失败退化为静默 no-op——例如 `SmsReceiver.publishIncomingSmsToCloud` 发布失败时用户完全无感知。
 
 **改法（分级，不要一刀切）**：
 

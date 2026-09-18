@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.dsim.database.DeviceHistoryRecord
@@ -373,7 +374,8 @@ class DeviceManagerActivity : AppCompatActivity() {
                 message
             )
             true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("dSIM_DeviceManager", "PING publish failed", e)
             false
         }
     }

@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import android.util.Log
 import com.example.dsim.database.SimCardConfig
 
 data class SimHardwareData(
@@ -18,6 +19,7 @@ data class SimHardwareData(
 )
 
 object HardwareProbeUtils {
+    private const val TAG = "dSIM_Probe"
 
     var isMockNoRootMode: Boolean = false
 
@@ -90,7 +92,9 @@ object HardwareProbeUtils {
             activeList.firstOrNull { info ->
                 try {
                     info.iccId == iccid
-                } catch (_: Exception) {
+                } catch (e: SecurityException) {
+                    // READ_PRIVILEGED_PHONE_STATE not held on this OEM; caller falls back to slot match.
+                    Log.d(TAG, "iccId unreadable for sub ${info.subscriptionId}: ${e.message}")
                     false
                 }
             }?.subscriptionId?.let { return it }
@@ -159,7 +163,7 @@ object HardwareProbeUtils {
                 list += getFallbackSlotBasedSimInfo(telephonyManager, deviceId)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "SIM enumeration failed; returning ${list.size} entries collected so far", e)
         }
 
         return list
@@ -232,7 +236,8 @@ object HardwareProbeUtils {
         for (slotIndex in 0 until phoneCount) {
             val simState = try {
                 telephonyManager.getSimState(slotIndex)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d(TAG, "getSimState($slotIndex) failed: ${e.message}")
                 if (slotIndex == 0) telephonyManager.simState else TelephonyManager.SIM_STATE_UNKNOWN
             }
 
@@ -242,7 +247,8 @@ object HardwareProbeUtils {
 
             val phoneNum = try {
                 telephonyManager.line1Number ?: ""
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d(TAG, "line1Number unavailable: ${e.message}")
                 ""
             }
 
@@ -271,7 +277,8 @@ object HardwareProbeUtils {
     private fun getActiveSubscriptionList(subscriptionManager: SubscriptionManager): List<SubscriptionInfo> {
         return try {
             subscriptionManager.activeSubscriptionInfoList.orEmpty()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "activeSubscriptionInfoList failed", e)
             emptyList()
         }
     }
@@ -286,14 +293,16 @@ object HardwareProbeUtils {
             subscriptionManager.getSubscriptionIds(slotIndex)
                 ?.firstOrNull { SubscriptionManager.isValidSubscriptionId(it) }
                 ?.let { return it }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "getSubscriptionIds($slotIndex) failed: ${e.message}")
         }
 
         try {
             subscriptionManager.getActiveSubscriptionInfoForSimSlotIndex(slotIndex)
                 ?.subscriptionId
                 ?.let { return it }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "getActiveSubscriptionInfoForSimSlotIndex($slotIndex) failed: ${e.message}")
         }
 
         return activeList.firstOrNull { it.simSlotIndex == slotIndex }?.subscriptionId
@@ -309,9 +318,11 @@ object HardwareProbeUtils {
                 throw SecurityException("Mock No Root Test")
             }
             info.iccId?.takeIf { it.isNotBlank() } ?: telephonyManager.simSerialNumber?.takeIf { it.isNotBlank() }
-        } catch (_: SecurityException) {
+        } catch (e: SecurityException) {
+            Log.d(TAG, "ICCID not readable: ${e.message}")
             null
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "ICCID read failed", e)
             null
         }
     }
@@ -319,7 +330,8 @@ object HardwareProbeUtils {
     private fun readPhoneNumberSafely(info: SubscriptionInfo): String {
         return try {
             info.number?.takeIf { it.isNotBlank() } ?: ""
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "subscription number not readable: ${e.message}")
             ""
         }
     }

@@ -3,9 +3,9 @@ package com.example.dsim
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Telephony
+import android.util.Log
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -411,7 +411,8 @@ object SystemSmsHistoryImporter {
                 IMPORT_SMS_TYPES,
                 null
             )?.use { it.count } ?: 0
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("dSIM_HistoryImport", "counting system SMS failed; treating as 0", e)
             0
         }
     }

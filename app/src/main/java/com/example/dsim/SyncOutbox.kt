@@ -34,7 +34,14 @@ object SyncOutbox {
     private val flushMutex = Mutex()
     private val gson = Gson()
 
-    data class FlushResult(val sent: Int, val dropped: Int, val failed: Int, val remaining: Int) {
+    data class FlushResult(
+        val sent: Int,
+        val dropped: Int,
+        val failed: Int,
+        val remaining: Int,
+        /** Short reason for the failure that stopped this flush, if any (already truncated for UI). */
+        val lastError: String? = null
+    ) {
         val stoppedEarly: Boolean get() = failed > 0
     }
 
@@ -99,6 +106,7 @@ object SyncOutbox {
             var sent = 0
             var dropped = 0
             var failed = 0
+            var lastError: String? = null
 
             if (!UsageModeManager.canUseCloud(context)) {
                 return@withLock FlushResult(0, 0, 0, dao.countOutbox())
@@ -114,12 +122,13 @@ object SyncOutbox {
                     }
                     val active = client
                     if (active == null || !active.isConnected) {
-                        failed++; break@loop
+                        lastError = "not_connected"; failed++; break@loop
                     }
                     try {
                         val encrypted = DsimCryptoUtils.encryptOrNull(entry.payloadJson, config.password)
                         if (encrypted == null) {
-                            dao.markOutboxAttempt(entry.id, "encrypt_failed"); failed++; break@loop
+                            dao.markOutboxAttempt(entry.id, "encrypt_failed")
+                            lastError = "encrypt_failed"; failed++; break@loop
                         }
                         // Blocking QoS 1 publish: returns after PUBACK. Only then is the row removed.
                         active.publish(publishTopic, MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
@@ -128,9 +137,10 @@ object SyncOutbox {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        dao.markOutboxAttempt(entry.id, e.message?.take(120) ?: e.javaClass.simpleName)
+                        val reason = e.message?.take(120) ?: e.javaClass.simpleName
+                        dao.markOutboxAttempt(entry.id, reason)
                         Log.w(TAG, "Outbox publish failed; will retry on next trigger", e)
-                        failed++; break@loop
+                        lastError = reason.take(40); failed++; break@loop
                     }
                 }
             }
@@ -138,6 +148,6 @@ object SyncOutbox {
             if (sent + dropped + failed > 0) {
                 Log.d(TAG, "flush sent=$sent dropped=$dropped failed=$failed remaining=$remaining")
             }
-            FlushResult(sent, dropped, failed, remaining)
+            FlushResult(sent, dropped, failed, remaining, lastError)
         }
 }

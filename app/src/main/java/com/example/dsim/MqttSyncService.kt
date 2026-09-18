@@ -177,7 +177,8 @@ class MqttSyncService : Service() {
             try {
                 globalMqttClient?.disconnect()
                 globalMqttClient?.close()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d("dSIM_SyncService", "client teardown on local mode: ${e.message}")
             }
             globalMqttClient = null
             connectionStateFlow.value = false
@@ -328,7 +329,8 @@ class MqttSyncService : Service() {
             globalMqttClient?.disconnect()
             globalMqttClient?.close()
             globalMqttClient = null
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d("dSIM_SyncService", "client teardown on destroy: ${e.message}")
         }
         Log.d("dSIM_SyncService", "同步服务已关闭")
     }
@@ -342,7 +344,12 @@ class MqttSyncService : Service() {
         if (config.topic.isBlank() || config.password.isBlank()) return
         try {
             val result = SyncOutbox.flush(this, globalMqttClient, config)
-            if (result.remaining > 0) {
+            if (result.failed > 0 && result.remaining > 0) {
+                // Publish failed on a live client: say so instead of a bare backlog count, so the user can
+                // tell "waiting for network" from "broker rejected us". Next successful flush clears it.
+                val reason = result.lastError?.takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()
+                updateNotification("云端状态：${result.remaining} 条短信待同步，上次发送失败$reason，将自动重试")
+            } else if (result.remaining > 0) {
                 updateNotification("云端状态：已连接，${result.remaining} 条短信待同步")
             } else if (result.sent > 0 && globalMqttClient?.isConnected == true) {
                 updateNotification("云端状态：已连接，守护进程常驻中")
@@ -410,7 +417,8 @@ class MqttSyncService : Service() {
 
             try {
                 globalMqttClient?.close()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.d("dSIM_SyncService", "stale client close before reconnect: ${e.message}")
             }
 
             val persistenceDir = File(filesDir, "mqtt").apply { mkdirs() }
