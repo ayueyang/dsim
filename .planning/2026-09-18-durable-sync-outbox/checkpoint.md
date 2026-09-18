@@ -1,7 +1,7 @@
 # Recovery checkpoint — batch A (durable sync outbox)
 
 ## Current status
-Batch A implemented and verified; committed on top of 88c3883 (hash in progress.md). No push.
+Batch A implemented, verified and committed as 81a786b (on top of 88c3883). No push. Working tree clean.
 Project: C:\Users\admin\AndroidStudioProjects\dSIM
 AgentDock task: tsk_9511e97f4e78dc5c.
 

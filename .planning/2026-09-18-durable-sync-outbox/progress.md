@@ -26,3 +26,6 @@ AVDs present: dSIM_B, dSIM_C, Medium_Phone. Emulator not started yet.
 - PowerShell quoting of `*`, `)`, `\"` inside nested `adb shell` commands is unreliable; put
   multi-step adb sequences in a `.sh` under `C:\Users\admin\AgentDock\` and run with Git bash.
 - Physical device e6f587b0 is unauthorized and was never targeted.
+
+## Commit
+81a786b feat(sync): durable outbox for incoming SMS + persistent MQTT session (27 files). Not pushed.
