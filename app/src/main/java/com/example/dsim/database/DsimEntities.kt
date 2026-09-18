@@ -83,3 +83,24 @@ data class DeviceHistoryRecord(
     val seenAt: Long,
     val summary: String
 )
+
+/** Persistent execution ledger. Retain UUIDs even when conversation messages are deleted. */
+@Entity(tableName = "send_commands")
+data class SendCommandRecord(
+    @PrimaryKey val uuid: String,
+    val requestFingerprint: String,
+    val groupFingerprint: String,
+    val requesterDeviceId: String,
+    val address: String,
+    val body: String,
+    val mappingKey: String,
+    val deviceId: String,
+    val subscriptionId: Int?,
+    val remarkPhone: String,
+    val createdAt: Long,
+    val partCount: Int,
+    val completedParts: String = "",
+    val hasFailedPart: Boolean = false,
+    val state: String = "PENDING",
+    val errorMsg: String? = null
+)

@@ -1,3 +1,5 @@
+> **最新补充（2026-09-18）**：参见 `FIXES_2026-09-18.md`。当前 Room v6 新增 send_commands，发送成功改由系统回调决定，新增 status=-2（结果未知）；本文件中的历史行数和流程图尚未全面重绘。
+
 # dSIM 分布式多设备短信同步系统 技术架构说明书
 
 | 项 | 内容 |
@@ -157,7 +159,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 │   HardwareProbeUtils (SIM/设备探测)                                        │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ 数据层                                                                    │
-│   Room: DsimDatabase v5 (4 实体) │ 9 组 SharedPreferences                  │
+│   Room: DsimDatabase v6 (5 实体) │ 9 组 SharedPreferences                  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -241,7 +243,7 @@ SmsChatActivity.sendCommand
 | `body` | String | 短信正文 |
 | `timestamp` | Long | 毫秒时间戳 |
 | `type` | Int | 1 = 收到，2 = 发出 |
-| `status` | Int | 0 = 发送中，1 = 成功，-1 = 失败 |
+| `status` | Int | 0 = 等待发送结果，1 = 系统发送成功（非送达），-1 = 失败，-2 = 结果未知 |
 | `isRead` | Boolean | 已读状态，默认 false |
 | `deviceId` | String | 归属设备（`ANDROID_ID`） |
 | `simId` | Int | subscriptionId，-1 表示未知 |
@@ -438,26 +440,21 @@ SmsChatActivity.sendCommand
 
 盐与 IV 每条报文重新随机生成并随报文一起传输，因此各端只需共享口令即可互解，不需要额外的密钥交换。
 
-**V1（历史格式，仅保留读取能力）**
-
-```
-[16B IV][AES/CBC/PKCS5Padding 密文]
-密钥 = SHA-256(口令)
-```
+**V1 已移除**：当前只接受 DSM2 魔数，不支持 V1 读取；无已发布旧设备，不预先保留兼容路径。
 
 ### 8.2 关键实现决策
 
 | 决策 | 理由 |
 |---|---|
-| 不对称格式，写入 V2、读取 V1/V2 | 允许滚动升级；新版能读旧版报文，反之不行 |
+| 当前只读写 V2/DSM2 | 所有设备应采用相同协议版本 |
 | 用魔数而非版本号字节区分格式 | V1 报文开头是随机 IV，单字节版本号有 1/256 概率误判；4 字节魔数把误判概率降到 2⁻³² |
 | 自行实现 PBKDF2（RFC 8018 §5.2） | `SecretKeyFactory("PBKDF2WithHmacSHA256")` 需要 API 26，而 minSdk = 24。若按 API 级别回退到 `PBKDF2WithHmacSHA1`，同一口令在不同 Android 版本上会派生出**不同**密钥，导致跨设备静默解密失败。固定使用 HmacSHA256 可保证各端一致 |
 | 迭代轮数 120,000 | 中端机单次派生约 0.2~0.5 秒；设备快照心跳周期为 20 秒，CPU 占空比可忽略 |
-| 移除 `topic.padEnd(KEY_SIZE, 'd')` | SHA-256 输出长度恒为 32 字节、与输入长度无关，该补位对结果无任何影响，属无副作用的死代码。移除后 V1 派生结果与旧实现逐位一致，历史报文仍可解开 |
+| 移除 `topic.padEnd(KEY_SIZE, 'd')` | SHA-256 输出长度恒为 32 字节、与输入长度无关，该补位对结果无任何影响，属无副作用的死代码。当前不再提供 V1 派生或读取路径 |
 
 ### 8.3 升级操作要求
 
-**所有已配对设备必须一并升级。** 若仅升级部分设备，升级后的设备发出的 V2 报文会被未升级设备解密失败并丢弃，表现为"单向消息丢失"。升级后的设备读取未升级设备发来的 V1 报文则不受影响。
+**所有已配对设备必须一并升级。** 若仅升级部分设备，升级后的设备发出的 V2 报文会被未升级设备解密失败并丢弃，表现为"单向消息丢失"。当前版本同样不能读取旧设备的 V1 报文。
 
 若需要回滚：将 `encryptMessage` 换回 CBC 实现即可，但 V2 报文将无法被旧版本读取。
 
@@ -842,22 +839,22 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 
 | 文件 | 现状 | 影响 |
 |---|---|---|
-| `ComposeSmsActivity` | `onCreate` 中仅剩注释「占位逻辑：将来可以显示一个发送短信的界面」，随后立即 `finish()` | 其他应用通过 `sms:` / `smsto:` Intent 调用撰写界面时会直接闪退；系统判定应用不满足默认短信应用要求 |
+| `ComposeSmsActivity` | `onCreate` 中仅剩注释「占位逻辑：将来可以显示一个发送短信的界面」，随后立即 `finish()` | 其他应用通过 `sms:` / `smsto:` Intent 调用时页面会立即关闭；此业务缺口不等于系统必然拒绝角色 |
 | `HeadlessSmsSendService` | 仅有 `onBind` 返回 null | 系统的"通过短信回复"（`RESPOND_VIA_MESSAGE`）能力失效 |
 | `MmsReceiver` | `onReceive` 为空 | 彩信无法接收。注意：`RECEIVE_MMS` 权限与接收器已在 Manifest 声明，文档层面易被误认为已支持彩信 |
 
-**这是当前最高优先级的实现缺口**：`OutgoingSmsReceiver`（不在本项目）、`ComposeSmsActivity`、`HeadlessSmsSendService`、`MmsReceiver` 四者中，后三者必须可用，`DefaultSmsManager` 的角色申请才不会被系统回绝。
+这些组件存在业务实现缺口。角色资格主要由 Manifest 声明等条件决定，实际授予与业务可用性应分别验证；不要把不在本项目的 `OutgoingSmsReceiver` 当作通用必备组件。
 
 ### 18.2 测试（✗）
 
-`app/src/test/` 与 `app/src/androidTest/` 下各只有一个工程模板用例（`ExampleUnitTest` 断言 2+2=4、`ExampleInstrumentedTest` 断言包名），**无任何有效覆盖**。项目也未配置 lint、detekt 或 ktlint。
+2026-09-18 已新增 13 项发送状态/配置恢复单测及 5 项隔离 Room 设备测试，见 `FIXES_2026-09-18.md`。模板测试仍保留；完整业务覆盖、真实运营商发送及旧版本逐级迁移仍有缺口。尚未配置 detekt/ktlint 等专项静态检查。
 
 考虑到系统里存在加密协议、状态机、多设备时序与数据迁移这些高回归风险区域，建议优先补齐：
 
-1. `DsimCryptoUtils` 的加解密往返与 V1/V2 交叉兼容用例；
+1. `DsimCryptoUtils` 的 DSM2 加解密往返、篡改拒收与错误口令拒收用例；
 2. `HistorySyncQueueManager` 的状态迁移用例；
 3. `PrivacyModeManager` 的号码变体匹配用例；
-4. Room 迁移 v1→v5 的逐级用例。
+4. Room 迁移 v1→v6 的逐级用例（已补 v5→v6 定向测试）。
 
 ### 18.3 发布工程化（✗）
 
@@ -893,7 +890,7 @@ Manifest 声明的完整权限：`INTERNET`、`ACCESS_NETWORK_STATE`、`FOREGROU
 | S2 | **本地数据库明文** | Room 数据库未加密，短信正文以明文落盘 | 视威胁模型决定是否引入 SQLCipher；至少确保 `allowBackup` 策略不会把数据库带出设备 |
 | S3 | **公共 Broker 与可猜 Topic** | 默认 `broker.emqx.io`:1883 为公共服务器；Topic 由用户自拟，常见做法是可读字符串。攻击者可订阅通配 Topic 收集密文 | 引导用户改用自建 Broker；对 Topic 提出不可猜测性要求；可考虑对 Topic 也做派生 |
 | S4 | **弱口令的离线爆破** | V2 已引入 PBKDF2（12 万轮）显著抬高代价，但口令若为用户自拟短串，仍存在被爆破风险 | 在设置页增加口令强度提示与最小长度校验 |
-| S5 | **升级期单向不可读** | V2 写入、V1 读取，未升级设备无法解析 V2 报文（详见 8.3） | 发布说明中强制要求全设备同步升级 |
+| S5 | **升级期单向不可读** | 只读写 V2，旧 V1 设备与当前设备不互通（详见 8.3） | 发布说明中强制要求全设备同步升级 |
 | S6 | **`allowBackup="true"`** | Manifest 允许备份，规则文件为模板，未排除数据库与 prefs | 明确排除 `dsim_core_database` 与 `dSIM_UI_PREFS` |
 
 ### 19.2 稳定性

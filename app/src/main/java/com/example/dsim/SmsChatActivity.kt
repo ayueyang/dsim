@@ -479,6 +479,7 @@ class SmsChatActivity : AppCompatActivity() {
 
                 DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
                     .updateMessageStatus(sms.uuid, 0, null)
+                // Reuse UUID to query/recover a result; never bypass execution deduplication.
                 publishSendCommand(
                     uuid = sms.uuid,
                     target = sms.address,
@@ -488,7 +489,7 @@ class SmsChatActivity : AppCompatActivity() {
                     topic = topic
                 )
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@SmsChatActivity, "正在重试发送", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SmsChatActivity, "已请求确认原指令状态；不会重复发送", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
@@ -706,7 +707,8 @@ class SmsChatActivity : AppCompatActivity() {
             holder.tvChatStatus.setOnClickListener(null)
             when (sms.status) {
                 0 -> {
-                    holder.tvChatStatus.text = "发送中"
+                    holder.tvChatStatus.text = "发送中 · 查询结果"
+                    holder.tvChatStatus.setOnClickListener { retrySend(sms) }
                     holder.tvChatStatus.setTextColor(palette.source)
                 }
 
@@ -715,8 +717,14 @@ class SmsChatActivity : AppCompatActivity() {
                     holder.tvChatStatus.setTextColor(palette.source)
                 }
 
+                -2 -> {
+                    holder.tvChatStatus.text = "发送结果未知 · 查询状态"
+                    holder.tvChatStatus.setTextColor(Color.parseColor("#B42318"))
+                    holder.tvChatStatus.setOnClickListener { retrySend(sms) }
+                }
+
                 else -> {
-                    holder.tvChatStatus.text = "发送失败 · 点此重试"
+                    holder.tvChatStatus.text = "发送失败 · 查询结果（重新发送请新建短信）"
                     holder.tvChatStatus.setTextColor(Color.parseColor("#B42318"))
                     holder.tvChatStatus.setOnClickListener { retrySend(sms) }
                 }

@@ -1,0 +1,189 @@
+package com.example.dsim
+
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.telephony.SmsManager
+import android.util.Log
+import androidx.room.withTransaction
+import com.example.dsim.database.DsimDatabase
+import com.example.dsim.database.SendCommandRecord
+import com.example.dsim.database.SimCardConfig
+import com.example.dsim.database.SmsMessage
+import kotlinx.coroutines.CancellationException
+import org.json.JSONObject
+
+/** At-most-once submission per UUID. A missing callback is NOT permission to send again. */
+object OutgoingSmsDispatcher {
+    private const val TAG = "dSIM_Send"
+    const val ACTION_SENT = "com.example.dsim.SMS_SENT_RESULT"
+
+    fun groupFingerprint(config: CloudSettingsManager.CloudConfig): String =
+        SendCommandPolicy.fingerprint(config.broker, config.topic, config.password)
+
+    suspend fun submit(
+        context: Context, uuid: String, target: String, body: String,
+        requesterDeviceId: String, config: SimCardConfig,
+        cloudConfig: CloudSettingsManager.CloudConfig
+    ) {
+        require(uuid.isNotBlank() && target.isNotBlank() && body.isNotBlank() && requesterDeviceId.isNotBlank())
+        val database = DsimDatabase.getDatabase(context)
+        val dao = database.dsimDao()
+        val group = groupFingerprint(cloudConfig)
+        val identity = SendCommandPolicy.fingerprint(group, requesterDeviceId, target, body, config.mappingKey)
+        val existing = dao.getSendCommand(uuid)
+        if (existing != null) {
+            // Blank fingerprint is a migrated v5 tombstone, not an executable command.
+            if (existing.requestFingerprint.isBlank()) {
+                val warning = existing.copy(requesterDeviceId = requesterDeviceId, groupFingerprint = group,
+                    deviceId = HardwareProbeUtils.getDeviceId(context))
+                publishOutcome(context, warning)
+            } else if (existing.requestFingerprint == identity) {
+                var result = existing
+                if (result.state == SendCommandPolicy.PENDING &&
+                    System.currentTimeMillis() - result.createdAt > SendCommandPolicy.CALLBACK_WAIT_MS) {
+                    result = database.withTransaction {
+                        val latest = dao.getSendCommand(uuid) ?: existing
+                        if (latest.state != SendCommandPolicy.PENDING) latest else {
+                            latest.copy(state = SendCommandPolicy.UNKNOWN).also {
+                                dao.updateSendCommand(it)
+                                dao.updateMessageStatus(uuid, -2, "系统发送结果尚未确认，请勿盲目重发")
+                            }
+                        }
+                    }
+                }
+                publishOutcome(context, result)
+            } else {
+                Log.w(TAG, "Rejected conflicting command UUID")
+            }
+            return
+        }
+        require(config.isActive && config.bindMode != "REMOTE_SHADOW") { "目标发送卡不可用" }
+        val subscription = HardwareProbeUtils.resolveSubscriptionId(context, config)
+        val localCount = dao.getActiveSimConfigs().count { it.bindMode != "REMOTE_SHADOW" }
+        require(subscription != null || localCount <= 1) { "无法定位指定 SIM 卡，已取消发送" }
+        val manager = smsManager(context, subscription)
+        val parts = manager.divideMessage(body)
+        require(parts.isNotEmpty()) { "短信内容为空" }
+        val record = SendCommandRecord(
+            uuid = uuid, requestFingerprint = identity, groupFingerprint = group,
+            requesterDeviceId = requesterDeviceId, address = target, body = body,
+            mappingKey = config.mappingKey, deviceId = HardwareProbeUtils.getDeviceId(context),
+            subscriptionId = subscription, remarkPhone = config.phoneNumber,
+            createdAt = System.currentTimeMillis(), partCount = parts.size
+        )
+        // Create explicit immutable PendingIntents; external applications cannot spoof this receiver.
+        val sentIntents = ArrayList(parts.indices.map { part ->
+            val intent = Intent(context, SmsSentResultReceiver::class.java).apply {
+                action = ACTION_SENT
+                data = Uri.Builder().scheme("dsim-sent").authority("result")
+                    .appendPath(uuid).appendPath(part.toString()).build()
+                putExtra("uuid", uuid)
+                putExtra("part", part)
+            }
+            PendingIntent.getBroadcast(context, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        })
+        val claimed = database.withTransaction {
+            if (dao.claimSendCommand(record) == -1L) false else {
+                val sms = dao.getMessageByUuid(uuid)
+                if (sms == null) dao.insertMessage(toSms(record))
+                else {
+                    require(sms.type == 2 && sms.address == target && sms.body == body &&
+                        sms.mappingKey == config.mappingKey) { "短信 UUID 内容冲突" }
+                    dao.updateSentMessageAfterSend(uuid, record.createdAt, 0,
+                        record.deviceId, subscription ?: -1, null, config.mappingKey, null)
+                }
+                true
+            }
+        }
+        if (!claimed) {
+            // Another coroutine owns submission. Query outcome only; never enter the API below.
+            dao.getSendCommand(uuid)?.takeIf { it.requestFingerprint == identity }
+                ?.let { publishOutcome(context, it) }
+            return
+        }
+        try {
+            // Claim is durable BEFORE crossing the non-transactional telephony boundary.
+            if (parts.size == 1) manager.sendTextMessage(target, null, body, sentIntents[0], null)
+            else manager.sendMultipartTextMessage(target, null, parts, sentIntents, null)
+            // No success update here. Only SmsSentResultReceiver decides the outcome.
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val outcome = database.withTransaction {
+                val latest = dao.getSendCommand(uuid) ?: record
+                if (latest.state == SendCommandPolicy.SENT || latest.state == SendCommandPolicy.FAILED) latest
+                else latest.copy(state = SendCommandPolicy.UNKNOWN,
+                    errorMsg = "发送调用异常，结果未确认；为防重复发送已锁定此指令").also {
+                    dao.updateSendCommand(it)
+                    dao.updateMessageStatus(uuid, -2, it.errorMsg)
+                }
+            }
+            Log.w(TAG, "SMS submission needs confirmation", e)
+            publishOutcome(context, outcome)
+        }
+    }
+
+    suspend fun onSentResult(context: Context, uuid: String, part: Int, resultCode: Int): SendCommandRecord? {
+        val database = DsimDatabase.getDatabase(context)
+        val dao = database.dsimDao()
+        val outcome = database.withTransaction {
+            val previous = dao.getSendCommand(uuid) ?: return@withTransaction null
+            val updated = SendCommandPolicy.recordPart(previous, part, resultCode == Activity.RESULT_OK, resultCode)
+            if (updated == previous) return@withTransaction null
+            dao.updateSendCommand(updated)
+            dao.updateMessageStatus(uuid, SendCommandPolicy.status(updated.state), updated.errorMsg)
+            updated
+        } ?: return null
+        if (outcome.state == SendCommandPolicy.SENT) {
+            SystemSmsStore.insertSentIfNeeded(context, outcome.address, outcome.body,
+                outcome.createdAt, outcome.subscriptionId)
+        }
+        return outcome.takeIf { it.state != SendCommandPolicy.PENDING }
+    }
+
+    private fun toSms(record: SendCommandRecord) = SmsMessage(
+        uuid = record.uuid, address = record.address, body = record.body,
+        timestamp = record.createdAt, type = 2, status = SendCommandPolicy.status(record.state),
+        deviceId = record.deviceId, simId = record.subscriptionId ?: -1,
+        iccid = null, mappingKey = record.mappingKey, errorMsg = record.errorMsg
+    )
+
+    internal fun publishOutcome(context: Context, record: SendCommandRecord) {
+        if (!UsageModeManager.canUseCloud(context)) return
+        val cloud = CloudSettingsManager.getConfig(context)
+        // A callback may arrive after the user switches cloud groups. Never leak into the new group.
+        if (groupFingerprint(cloud) != record.groupFingerprint) return
+        val result = JSONObject().apply {
+            put("action", "SEND_CMD_RESULT")
+            put("uuid", record.uuid)
+            put("targetDeviceId", record.requesterDeviceId)
+            put("deviceId", record.deviceId)
+            put("success", record.state == SendCommandPolicy.SENT)
+            put("state", record.state)
+            put("message", record.errorMsg ?: if (record.state == SendCommandPolicy.UNKNOWN)
+                "发送结果未知；同一指令不会再次发送，请先确认收件端" else "")
+            put("timestamp", System.currentTimeMillis())
+        }.toString()
+        MqttSyncService.publishCurrentGroup(context, result, cloud)
+        if (record.state == SendCommandPolicy.SENT || record.state == SendCommandPolicy.FAILED) {
+            // Ordinary sync carries the final state; do not announce an unconfirmed submission.
+            val payload = SyncPayload(toSms(record), record.remarkPhone,
+                DeviceNameManager.getDisplayName(context), silentSync = true)
+            MqttSyncService.publishCurrentGroup(context, com.google.gson.Gson().toJson(payload), cloud)
+        }
+    }
+
+    private fun smsManager(context: Context, subscription: Int?): SmsManager {
+        val manager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            context.getSystemService(SmsManager::class.java)
+        else @Suppress("DEPRECATION") SmsManager.getDefault()
+        if (subscription == null) return manager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) manager.createForSubscriptionId(subscription)
+        else @Suppress("DEPRECATION") SmsManager.getSmsManagerForSubscriptionId(subscription)
+    }
+}

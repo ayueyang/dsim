@@ -8,6 +8,19 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DsimDao {
+    // INSERT OR IGNORE is the atomic ownership decision; never REPLACE an execution record.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun claimSendCommand(command: SendCommandRecord): Long
+
+    @Query("SELECT * FROM send_commands WHERE uuid = :uuid")
+    suspend fun getSendCommand(uuid: String): SendCommandRecord?
+
+    @androidx.room.Update
+    suspend fun updateSendCommand(command: SendCommandRecord)
+
+    @Query("SELECT * FROM sms_messages WHERE uuid = :uuid")
+    suspend fun getMessageByUuid(uuid: String): SmsMessage?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(sms: SmsMessage): Long
 

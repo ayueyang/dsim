@@ -92,6 +92,10 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".SmsSentResultReceiver"
+            android:exported="false" />
+
         <!-- 2. 必须组件：彩信接收器 -->
         <receiver
             android:name=".OtpCopyReceiver"

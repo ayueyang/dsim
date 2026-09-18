@@ -3,6 +3,7 @@
 本文件是给在本仓库工作的**AI 智能体与人类协作者**的约定手册。目标是让任何人在改动代码前，先知道哪些地方是"碰了会坏"的。
 
 先读本文，再按需读：
+- `FIXES_2026-09-18.md` —— 最新正确性修复与未完成边界（冲突时以此为准）
 - `dSIM 分布式多设备短信同步系统 技术架构说明书 V2.0.md` —— 架构与协议全貌
 - `TESTING.md` —— 测试环境与回归验证
 - `REFACTORING.md` —— 代码质量优化工作单（要做重构/优化先读它）
@@ -33,7 +34,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 |---|---|
 | 最快的类型/语法校验（改完必跑） | `./gradlew :app:compileDebugKotlin` |
 | 产出 debug 包 | `./gradlew :app:assembleDebug` |
-| 单测（目前只有模板用例） | `./gradlew :app:testDebugUnitTest` |
+| 单测（含发送状态与配置恢复用例） | `./gradlew :app:testDebugUnitTest` |
 
 注意：
 
@@ -51,13 +52,13 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
        SenderColorUtils / ConversationProfileStore / DeviceDirectoryManager
 同步   MqttSyncService(前台服务·协议中枢) / HistorySyncQueueManager / DsimCryptoUtils
 采集   SmsReceiver(+SmsReceivedReceiver) / SystemSmsHistoryImporter / HardwareProbeUtils
-数据   Room DsimDatabase v5 (4 实体) + 9 组 SharedPreferences
+数据   Room DsimDatabase v6 (5 实体，新增 send_commands) + 9 组 SharedPreferences
 ```
 
 **两条主链路（务必记住真实走向）：**
 
 - 入站短信：`SmsReceiver` → 标准化 → 解析归属卡 → 写 Room → 回写系统库 → 发通知 → **直接取 `MqttSyncService.globalMqttClient` 发布**。不经过 `MqttSyncService` 的方法中转。
-- 出站短信：`SmsChatActivity` 预生成 uuid 并落库 status=0 → 发 `SEND_CMD` → 执行端 `handleSendCommand` 实际发短信 → 回 `SEND_CMD_RESULT` → 发起端更新 status。
+- 出站短信：`SmsChatActivity` 预生成 uuid 并落库 status=0 → 发 `SEND_CMD` → 执行端 `OutgoingSmsDispatcher` 原子认领 UUID → SmsManager → `SmsSentResultReceiver` 汇总真实发送回调 → 回 `SEND_CMD_RESULT` → 发起端更新 status。认领后回调缺失不可自动重发。
 
 ---
 
@@ -66,15 +67,15 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | # | 约束 | 原因 |
 |---|---|---|
 | C1 | 改 `@Entity` 字段必须同时递增 `@Database(version)` 并补一条 `Migration` | `exportSchema = false`，没有 schema diff 会提醒你。漏了会直接崩在老用户的升级路径上 |
-| C2 | `sms_messages.uuid` 的唯一索引不能去掉 | 跨设备幂等全靠它。`MIGRATION_4_5` 专门为此做过数据清洗 |
-| C3 | 加密写入必须走 `DsimCryptoUtils.encryptMessage`，不要自己拼装格式 | 统一走 V2（`DSM2` 魔数 + PBKDF2 + AES-GCM）。改格式时必须保留对旧魔数的读取分支并新增魔数，不能原地改语义 |
+| C2 | `sms_messages.uuid` 的唯一索引不能去掉 | 跨设备记录去重依赖它；发送副作用另外依赖 send_commands 的原子认领。`MIGRATION_4_5` 专门为此做过数据清洗 |
+| C3 | 加密写入必须走 `DsimCryptoUtils.encryptMessage`，不要自己拼装格式 | 统一走 V2（`DSM2` 魔数 + PBKDF2 + AES-GCM）。改格式时必须新增魔数；仅存在已发布旧设备时保留读取分支，当前 V1 已移除，不能原地改语义 |
 | C4 | 密钥派生自**口令**，与 MQTT Topic 无关 | 历史上形参名曾叫 `topic`，导致多次误判。V2 已改名 `secret`，别再改回去 |
 | C5 | Manifest 里默认短信应用的必须组件不能删 | `SmsReceiver`、`ComposeSmsActivity`、`HeadlessSmsSendService`、`MmsReceiver`。少一个系统就拒绝授予默认短信角色（后三者目前仍是占位实现，见 §6） |
 | C6 | 两个短信接收器的动作互斥规则不能破坏 | 默认短信应用只处理 `SMS_DELIVER`，非默认只处理 `SMS_RECEIVED`。破坏它会收到重复短信 |
 | C7 | 新增云端上传点前，必须过 `UsageModeManager` 的闸 | `canUploadIncomingSms` / `canReceiveCloudSms` / `canUseCloud`。这是"本地模式"隐私承诺的代码落实 |
 | C8 | 所有源文件必须 UTF-8 无 BOM、LF 行尾 | 曾发生过 GBK 被误读为 UTF-8 后写回导致的中文乱码事故（4 处，已在 V2.0 修复） |
 | C9 | 新增 MQTT 动作时，需在 `handleIncomingMessage` 中按正确的顺序位置加分支，并对定向动作校验 `targetDeviceId == localDeviceId` | 顺序错会导致消息被上游分支吞掉；缺校验会导致别的设备的回执被误处理 |
-| C10 | 发信链路必须以 `uuid` 贯穿，落库前用 `dao.checkUuidExists` 判重 | 否则重发/回声会产生重复会话记录 |
+| C10 | 发信链路必须以 `uuid` 贯穿，落库前用 `dao.checkUuidExists` 判重 | 否则重发/回声会产生重复会话记录；实际发信前还必须原子认领 send_commands，不可用 status=0 短信行代替执行记录 |
 
 ---
 
@@ -99,10 +100,13 @@ dSIM/
         │   ├── AndroidManifest.xml
         │   ├── java/com/example/dsim/
         │   │   ├── database/
-        │   │   │   ├── DsimEntities.kt           4 个 @Entity
+        │   │   │   ├── DsimEntities.kt           5 个 @Entity
         │   │   │   ├── DsimDao.kt                40 个 DAO 方法
-        │   │   │   └── DsimDatabase.kt           v5 + 4 次 Migration
-        │   │   ├── MqttSyncService.kt            ★ 协议中枢（1088 行）
+        │   │   │   └── DsimDatabase.kt           v6 + 5 次 Migration
+        │   │   ├── MqttSyncService.kt            ★ 协议中枢（发送执行已抽出）
+        │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
+        │   │   ├── SmsSentResultReceiver.kt     系统发送回调
+        │   │   ├── SendCommandPolicy.kt         分段状态纯逻辑
         │   │   ├── DsimCryptoUtils.kt            ★ 加解密 V2（AEAD）
         │   │   ├── HistorySyncQueueManager.kt    历史同步队列状态机
         │   │   ├── HistoryQueueNotificationHelper.kt
@@ -170,10 +174,10 @@ dSIM/
 
 ## 6. 当前待办（按优先级）
 
-1. **补齐默认短信应用的三个必备组件**（`ComposeSmsActivity` 目前直接 `finish()`、`HeadlessSmsSendService` 只有 `onBind`、`MmsReceiver` 空实现）。这是功能可用性的硬缺口——系统会因为这三个组件不合格而拒绝授予默认短信角色。
-2. **补测试**：加密往返与篡改拒收、历史队列状态迁移、隐私模式号码变体匹配、Room v1→v5 逐级迁移。这四块都是纯逻辑，**不依赖模拟器 modem**，用 `androidTest`/`test` 即可，是投入产出比最高的方向。（注：V1 旧格式兼容已移除——项目无发布无用户，该路径是死代码；今后改加密格式时，只有当线上真有旧版设备才保留读取分支。）
+1. **补齐默认短信应用的三个必备组件**（`ComposeSmsActivity` 目前直接 `finish()`、`HeadlessSmsSendService` 只有 `onBind`、`MmsReceiver` 空实现）。这是业务功能缺口；不能仅凭方法体占位断言系统必然拒绝默认短信角色，需分别验证角色资格与业务实现。
+2. **补测试**：加密往返与篡改拒收、历史队列状态迁移、隐私模式号码变体匹配、Room v1→v6 逐级迁移（已补 v5→v6 定向测试，其余仍待补齐）。这四块都是纯逻辑，**不依赖模拟器 modem**，用 `androidTest`/`test` 即可，是投入产出比最高的方向。（注：V1 旧格式兼容已移除——项目无发布无用户，该路径是死代码；今后改加密格式时，只有当线上真有旧版设备才保留读取分支。）
 3. **`mappingKey` 在 Root 模式下不含设备维度**：`mappingKey = ICCID_<iccid>`，而它又是 `sim_card_configs` 的主键。真实卡 ICCID 唯一所以平时不暴露，但**模拟器各实例共用同一 ICCID 时两张卡会碰撞**，导致对端卡的 `REMOTE_SHADOW` 不被创建、跨设备发信无法触发——已在多设备测试中实测到。**测试环境已用 ICC Profile 根治**（每台模拟器指定不同 ICCID，见 `TESTING.md` §5.1 与 `test-fixtures/icc/`）。若希望从应用侧根治，可考虑给键加设备维度或补唯一性兜底，但注意这会破坏「卡换机仍能识别」的既有语义，需要先想清楚。
-4. **`deviceId` 直接取自 `ANDROID_ID`**：Android 8+ 该值按应用签名作用域隔离，**debug 与 release 构建切换会让应用把自己当成新设备**，历史 `sms_message.deviceId` 与 `DeviceProfile.isLocalDevice` 判定会漂移。建议改为应用自管持久 UUID。
+4. **`deviceId` 直接取自 `ANDROID_ID`**：Android 8+ 该值按应用签名作用域隔离，**debug 与 release 构建切换会让应用把自己当成新设备**，历史 `sms_message.deviceId` 与 `DeviceProfile.isLocalDevice` 判定会漂移。先明确安装级/可恢复身份语义；普通 prefs UUID 不能保证卸载重装或换签名后身份不变。
 5. **`isMockNoRootMode` 不持久化**：它是 `HardwareProbeUtils` 里 `object` 的普通 `var`，进程重启即失效，多设备测试时每次都要重新切换。
 6. **口令存储加固**：`dSIM_UI_PREFS.PASSWORD` 目前明文。迁移到 `EncryptedSharedPreferences`。
 7. **发布工程化**：无签名配置、`isMinifyEnabled = false`、版本号未迭代。

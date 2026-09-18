@@ -12,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SmsMessage::class,
         SimCardConfig::class,
         DeviceProfile::class,
-        DeviceHistoryRecord::class
+        DeviceHistoryRecord::class,
+        SendCommandRecord::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class DsimDatabase : RoomDatabase() {
@@ -178,8 +179,44 @@ abstract class DsimDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `send_commands` (
+                        `uuid` TEXT NOT NULL PRIMARY KEY,
+                        `requestFingerprint` TEXT NOT NULL,
+                        `groupFingerprint` TEXT NOT NULL,
+                        `requesterDeviceId` TEXT NOT NULL,
+                        `address` TEXT NOT NULL,
+                        `body` TEXT NOT NULL,
+                        `mappingKey` TEXT NOT NULL,
+                        `deviceId` TEXT NOT NULL,
+                        `subscriptionId` INTEGER,
+                        `remarkPhone` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `partCount` INTEGER NOT NULL,
+                        `completedParts` TEXT NOT NULL,
+                        `hasFailedPart` INTEGER NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `errorMsg` TEXT
+                    )
+                """.trimIndent())
+                // Old sent records have no ledger. They must not become executable on replay.
+                database.execSQL("""
+                    INSERT OR IGNORE INTO send_commands
+                    (uuid, requestFingerprint, groupFingerprint, requesterDeviceId, address, body,
+                     mappingKey, deviceId, subscriptionId, remarkPhone, createdAt, partCount,
+                     completedParts, hasFailedPart, state, errorMsg)
+                    SELECT uuid, '', '', '', address, body, mappingKey, deviceId, simId, '',
+                           timestamp, 1, '', 0, 'UNKNOWN', '旧版本发送记录：无法确认执行结果，禁止重放'
+                    FROM sms_messages WHERE type = 2
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): DsimDatabase {
             return INSTANCE ?: synchronized(this) {
+                INSTANCE?.let { return@synchronized it }
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     DsimDatabase::class.java,
@@ -189,7 +226,8 @@ abstract class DsimDatabase : RoomDatabase() {
                         MIGRATION_1_2,
                         MIGRATION_2_3,
                         MIGRATION_3_4,
-                        MIGRATION_4_5
+                        MIGRATION_4_5,
+                        MIGRATION_5_6
                     )
                     .build()
                 INSTANCE = instance

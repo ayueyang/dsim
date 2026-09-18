@@ -1,5 +1,7 @@
 # dSIM 代码质量优化工作单
 
+> **2026-09-18 补充**：先读 `FIXES_2026-09-18.md`。本工作单的历史度量和优先级不代表已修复后的现状；发送幂等、回调及 Room v6 已另行实现，其余条目仍需逐项验证。
+
 > **本文件是一份可直接交给新会话执行的工作单。** 写作目的是让执行者不需要本轮对话的任何上下文。
 >
 > | 项 | 内容 |
@@ -110,7 +112,7 @@
 
 **必须验证的坑**：无 Root 模式的 mappingKey 会把 deviceId 嵌进键里——`DEV_<deviceId>_SUBID_1` 与 `..._UNBOUND`。`HardwareProbeUtils.parseDeviceIdFromMappingKey` 按 `_SUBID_`/`_SLOT_` 分割，UUID 的连字符不影响分割，但**建议去掉连字符后再用**，避免键里出现 `-`。
 
-**验收**：卸载重装后 deviceId 不变；debug 与 release 构建在同设备上 deviceId 一致；SEND_CMD 往返仍工作（`verify-dsim.sh` + UI 实测）。
+**验收修正**：普通 prefs UUID 仅保证同一安装数据内稳定；卸载重装可变化，不保证跨签名一致。若要求可恢复的逻辑设备身份，必须先设计显式身份恢复/重新配对协议，并防止跨设备恢复备份克隆身份。SEND_CMD 往返仍需验证。
 
 **数据迁移**：现阶段无用户，直接切换即可，不做迁移。若将来有用户，再补"旧值→新值"的一次性映射。
 
@@ -327,7 +329,7 @@
 | N4 | **不要用 `-read-only` 双开同一 AVD** | 两实例共享 `ANDROID_ID` → 应用把对端当自己 |
 | N5 | **不要参考 `gradle/libs.versions.toml`** | 模板残留未生效，AGP 9.1.0 与实际 8.7.3 冲突 |
 | N6 | **不要为此降 compileSdk 36** | AGP 8.7.3 的"仅验证到 35"警告是已知可接受 |
-| N7 | **不要用 PowerShell 工具** | 本会话实测连 `Write-Output` 都返回空输出 |
+| N7 | **不要把旧会话工具故障当平台约束** | 旧会话 PowerShell 空输出为历史现象；2026-09-18 AgentDock exec_command 可正常运行 PowerShell，Gradle -D 参数须整体加引号 |
 | N8 | **UI 驱动脚本不要用 `set -e`** | UI 步骤返回非零是常态，会导致第一处未命中就静默退出 |
 | N9 | **不要用 `adb emu sms send` 在真机上测试** | 仅模拟器支持 |
 | N10 | **拉应用库不要分三次 `cat`** | 必须设备侧一次拷齐再拉（WAL + 应用持续写，见 `pull-app-db.sh`） |
