@@ -174,6 +174,10 @@ internal class MqttInboundHandler(
                     payload.remarkPhone
                 )
             }
+        } catch (e: CancellationException) {
+            // Must propagate: InboundDispatcher leaves a cancelled delivery unacked so the broker
+            // redelivers it; swallowing it here would ack a message that was never committed.
+            throw e
         } catch (e: Exception) {
             Log.e("dSIM_SyncService", "处理云端消息失败", e)
         }

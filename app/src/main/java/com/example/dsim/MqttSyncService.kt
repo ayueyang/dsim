@@ -522,6 +522,16 @@ class MqttSyncService : Service() {
             val persistenceDir = File(filesDir, "mqtt").apply { mkdirs() }
             val autoReconnectEnabled = CloudSettingsManager.isAutoReconnectEnabled(this)
             val client = MqttClient(session.broker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
+            // PUBACK is sent by InboundDispatcher after the handler has committed, not when
+            // messageArrived returns (C24). Must be set before connect().
+            client.setManualAcks(true)
+            val dispatcher = InboundDispatcher(
+                scope = serviceScope,
+                baseTopic = session.topic,
+                localDeviceId = deviceId,
+                handler = inbound::handleIncomingMessage,
+                ack = { id, qos -> client.messageArrivedComplete(id, qos) }
+            )
             globalMqttClient = client
             val publishTopic = CloudTopics.publishTopic(session.topic, deviceId)
             val subscribeFilter = CloudTopics.subscriptionFilter(session.topic)
@@ -580,17 +590,10 @@ class MqttSyncService : Service() {
                 override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
 
                 override fun messageArrived(topic: String?, message: MqttMessage?) {
-                    val encryptedBase64 = message?.toString() ?: return
-                    // Our own publications come back through the wildcard subscription. The sender
-                    // is in the topic, so drop them here without spending a decrypt.
-                    if (CloudTopics.isOwnEcho(session.topic, topic, deviceId)) {
-                        Log.d("dSIM_SyncService", "skip own echo on $topic")
-                        return
-                    }
-                    val senderFromTopic = CloudTopics.senderOf(session.topic, topic)
-                    serviceScope.launch {
-                        inbound.handleIncomingMessage(encryptedBase64, senderFromTopic)
-                    }
+                    val mqttMessage = message ?: return
+                    // Own echoes are dropped by topic before decrypt; everything else is acked by
+                    // the dispatcher once the handler returns (manual acks, see above).
+                    dispatcher.onMessage(topic, mqttMessage.toString(), mqttMessage.id, mqttMessage.qos, mqttMessage.isDuplicate)
                 }
             })
 

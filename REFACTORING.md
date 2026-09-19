@@ -44,7 +44,7 @@
 | 哨兵字符串比较 | 0（W5 前 11 处） | `encryptOrNull()` 返回可空，哨兵已删 |
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
-| 有效测试 | 0（2026-09-18 晚：JVM 39 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCostPolicyTest / ReplayGuardTest / CredentialCodecTest / SendCommandLedgerTest / SyncOutboxDaoTest |
+| 有效测试 | 0（2026-09-19：JVM 94 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCostPolicyTest / ReplayGuardTest / CredentialCodecTest / InboundDispatcherTest / SendCommandLedgerTest / SyncOutboxDaoTest |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
 ---

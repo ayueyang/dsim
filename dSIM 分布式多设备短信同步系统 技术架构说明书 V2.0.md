@@ -483,10 +483,11 @@ PBKDF2 实现已用标准测试向量校验通过：
 
 | 项 | 值 |
 |---|---|
-| 默认 Broker | `tcp://broker.emqx.io:1883`（公共服务器，可配置） |
-| 客户端 id | `dSIM_SEC_${deviceId}_${System.currentTimeMillis()}` |
-| 持久化 | `MemoryPersistence`（不落盘） |
-| cleanSession | true |
+| 默认 Broker | `ssl://broker.emqx.io:8883`（公共服务器，可配置；存量配置不自动迁移） |
+| 客户端 id | `dSIM_${deviceId}`（固定，C12） |
+| 持久化 | `MqttDefaultFilePersistence(filesDir/mqtt)` |
+| cleanSession | false（Broker 为离线设备排队 QoS1） |
+| 入站 ack | `setManualAcks(true)`；`InboundDispatcher` 在处理器落库返回后 `messageArrivedComplete`（C24） |
 | connectionTimeout | 15 秒 |
 | keepAliveInterval | 30 秒 |
 | 自动重连 | 由 `AUTO_RECONNECT` 开关控制 |
@@ -522,6 +523,8 @@ data class SyncPayload(
 ```
 
 ### 9.3 入站消息处理顺序（`handleIncomingMessage`）
+
+> 2026-09-19 起外层由 `InboundDispatcher` 包裹：⓪ 按 topic 后缀丢自身回声（立即 ack，不解密）→ 在 `serviceScope` 内执行下列步骤 → **全部返回后才发 PUBACK**；协程被取消则不 ack，Broker 在下个会话以 `dup=1` 重投，⑭ 的 uuid 判重保证幂等。步骤 ② 现为 `MqttPayloadCodec.decodeEnvelope`，其后立即过 `ReplayGuard`（C22）。
 
 ```
 ①  DsimCryptoUtils.decryptMessage(encrypted, currentPassword)  解密，失败即返回

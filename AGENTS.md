@@ -61,6 +61,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 **两条主链路（务必记住真实走向）：**
 
 - 入站短信：`SmsReceiver` → 标准化 → 解析归属卡 → **`SyncOutbox.storeIncomingSms` 在同一事务里写 `sms_messages` + `sync_outbox`** → 回写系统库 → 发通知 → `startForegroundService(ACTION_FLUSH_OUTBOX)`。Receiver **不再触碰 MQTT 客户端**；真正的发布由 `MqttSyncService.flushOutbox()` 在连接建立 / 重连 / 心跳 / 显式冲刷时通过 `SyncOutbox.flush` 完成，QoS1 PUBACK 后才删行。断网时短信落库但留在发件箱，通知栏显示「N 条短信待同步」。
+- 入站云端消息（对端发来的短信 / 控制消息）：Paho `messageArrived` → `InboundDispatcher.onMessage`（按 topic 丢自身回声并立即 ack）→ `serviceScope` 内 `MqttInboundHandler.handleIncomingMessage`（解密 → 解码 → `ReplayGuard` → 分发 → Room 落库）→ **处理器返回后才 `messageArrivedComplete` 发 PUBACK**（C24）。进程在落库前死亡则该消息不被 ack，Broker 在下个持久会话重投。
 - 出站短信：`SmsChatActivity` 预生成 uuid 并落库 status=0 → 发 `SEND_CMD` → 执行端 `OutgoingSmsDispatcher` 原子认领 UUID → SmsManager → `SmsSentResultReceiver` 汇总真实发送回调 → 回 `SEND_CMD_RESULT` → 发起端更新 status。认领后回调缺失不可自动重发。
 
 ---
@@ -90,6 +91,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C20 | 重连由 `MqttSyncService` 自己负责：`setAutomaticReconnect(false)` 不可改回 true；`connectionLost` 与连接失败只能经 `scheduleReconnect()`（`ReconnectPolicy` 5 s 起倍增、封顶 5 min，单一 job），网络恢复经 `registerDefaultNetworkCallback` 立即重试；重建客户端前必须 `setCallback(null)` + `disconnectForcibly` + `close(true)` 旧实例 | Paho 的自动重连只覆盖「连上过之后断线」，首连失败永远不重试；而且它在后台重连时我们再 `close()`/新建同 clientId 客户端会互相踢，结果是「一次连接失败然后沉默」（批次 E 观察到的缺陷）。两套重连并存必然竞态，只能留一套 |
 | C21 | 远程代发（SEND_CMD 执行端）必须过两道费用闸：`CloudSettingsManager.isRemoteSendAllowed`（在 `MqttInboundHandler.handleSendCommand` 里、进 dispatcher 之前，拒绝时回 `SEND_CMD_RESULT success=false`）与 `SendCostPolicy.isOverLimit`（在 `OutgoingSmsDispatcher.submit` 里、`claimSendCommand` 之前、重复 UUID 分支之后）；请求端 `SmsChatActivity` 对多段短信必须先弹确认 | 每条运营商短信约 ¥0.1，由执行端付费。闸放在 claim 之后会留下永远不发的 PENDING 行；放在重复 UUID 分支之前会把「查询旧指令结果」也挡掉，请求端气泡永远卡在发送中。上限按 `send_commands` 当日 `partCount` 求和、`state != FAILED`（PENDING/UNKNOWN 可能已计费），0 = 不限 |
 | C22 | 每条云端载荷必须带 `ts`/`nonce` 信封（`MqttPayloadCodec.encode` 自动盖，发件箱行在 `SyncOutbox.flush` 里用 `stamp()` **重新盖**）；接收端在 `MqttInboundHandler` 解码后、任何副作用前过 `ReplayGuard`（缺失 / 偏差 > 10 min / 同发送者 nonce 重复 → 丢弃；OFFLINE 用 24 h 窗口）。不设兼容期：旧设备发的无信封消息会被拒 | 公共 broker 上任何人都能录下密文原样重放，SEND_CMD 靠 UUID 幂等但 PING/PONG/HISTORY_QUEUE_BATCH/OFFLINE 没有；在入队时盖章会让离线超过 10 min 的发件箱行到达即过期；Last Will 在连接时就已加密，窗口必须放宽。`ReplayGuard` LRU 4096 条有界，超容后最旧 nonce 可能被遗忘——窗口是硬保证，LRU 是窗口内的补充 |
+| C24 | 入站 QoS1 消息的 PUBACK 由 `InboundDispatcher` 在 `MqttInboundHandler.handleIncomingMessage` **返回后**发出（`client.setManualAcks(true)` + `messageArrivedComplete`）；处理器被取消时**不 ack**、必须 rethrow `CancellationException`，让 Broker 在下个会话重投（`dup=1`）；处理器抛其他异常仍要 ack（毒消息不能无限重投）。不要把 `setManualAcks` 改回 false，也不要在 `messageArrived` 里直接 `launch` 后返回 | Paho 在 `messageArrived` 返回瞬间就 ack；此前 ack 早于 Room 插入，进程在窗口内被杀（LMK / force-stop / onDestroy 取消 scope）就丢对端短信，而持久会话（C12）帮不上忙因为 ack 已发出。模拟器 A/B：400 条突发 +1 s force-stop，旧构建丢 43 条，新构建 0 丢、20 条 `dup=true` 重投。幂等靠 `sms_messages.uuid` 唯一索引与 `send_commands` 账本 |
 | C23 | 云端口令只以 `CredentialVault` 密封形式存于 `PASSWORD_ENC`（Android Keystore `dsim_cred_v1`，AES-256-GCM，不绑用户认证）；读路径 `CloudSettingsManager.readPassword` 负责旧明文 `PASSWORD` 的一次性迁移；密封值打不开 = 密钥丢失 → **清空 BROKER/TOPIC/PASSWORD_ENC 并写 `CREDENTIALS_RESET_REASON`**，UI 提示重填，绝不明文回退 | Keystore 密钥不出硬件，prefs 文件被拷走也无用；绑用户认证会让开机自启读不到口令。Keystore 完全不可用（seal 返回 null）时保留明文只是回到 W14 之前的状态，比把用户锁在外面强，所以是唯一允许明文的分支。broker/topic 不是秘密（topic 本来就在线上） |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
@@ -122,6 +124,7 @@ dSIM/
         │   │   ├── MqttSyncService.kt            ★ 前台服务：连接生命周期 / 心跳循环 / 通知 / 冲刷发件箱（W4 后 568 行）
         │   │   ├── CloudSession.kt               当前组凭据（服务写，Publisher/Inbound 读）
         │   │   ├── MqttPublisher.kt              全部出站控制消息 + 心跳指纹（C13/C14 实现点）
+        │   │   ├── InboundDispatcher.kt          messageArrived → 协程 → 处理完成后手动 PUBACK（C24 实现点）
         │   │   ├── MqttInboundHandler.kt         解密 → MqttPayloadCodec.decode → when(inbound) 分发
         │   │   ├── SyncOutbox.kt                 ★ 入站同步发件箱：事务入队 + 单飞冲刷
         │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
