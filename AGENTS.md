@@ -95,6 +95,8 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 | C23 | 云端口令只以 `CredentialVault` 密封形式存于 `PASSWORD_ENC`（Android Keystore `dsim_cred_v1`，AES-256-GCM，不绑用户认证）；读路径 `CloudSettingsManager.readPassword` 负责旧明文 `PASSWORD` 的一次性迁移；密封值打不开 = 密钥丢失 → **清空 BROKER/TOPIC/PASSWORD_ENC 并写 `CREDENTIALS_RESET_REASON`**，UI 提示重填，绝不明文回退 | Keystore 密钥不出硬件，prefs 文件被拷走也无用；绑用户认证会让开机自启读不到口令。Keystore 完全不可用（seal 返回 null）时保留明文只是回到 W14 之前的状态，比把用户锁在外面强，所以是唯一允许明文的分支。broker/topic 不是秘密（topic 本来就在线上） |
 | C14 | 设备快照（PONG）只经 `publishDeviceSnapshot(force)` 发布，心跳路径必须 `force=false` | `HeartbeatPolicy` 按指纹变化 / 120 秒静默上限决定是否发；绕过它会把心跳退回到每 20 秒一条。`ONLINE_TIMEOUT_MS`（5 分钟）必须大于 `MAX_SILENCE_MS` |
 
+> **C7 已登记的唯一例外（F-3）**：切到本地模式时，`APPLY_LOCAL_MODE` 的退役路径仍会经 `publishOfflineBestEffort` 向群 topic 发一条可解密的 OFFLINE，**不过 C7 闸**。理由：离开通知必须在断开连接前发出，否则对端会把本机长期显示为在线（LWT 只是服务端兜底，靠它意味着最长数分钟的假在线）。该例外自退役路径存在起即为既有语义（T1.1 保留了它），新增上传点仍以过闸为准。
+
 ---
 
 ### 阶段 0 已知取舍：无界重投可导致入站投递停摆（F2）
