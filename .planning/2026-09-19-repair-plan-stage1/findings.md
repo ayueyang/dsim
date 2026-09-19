@@ -45,3 +45,9 @@
 - MCP 任务：`tsk_ce935dd0dcc0b837`。
 - 证据目录（仓库外，未入 git）：`C:\Users\admin\AgentDock\dsim-stage1-evidence\`（各阶段 `.sh`、`.log`、`.json`、`protected-baseline.json`、`app-release-debugkey.apk`）。
 - 技能安装根：`C:\Users\admin\.agentdock\skill-store\installed\planning-with-files\3.20.0`。
+
+## 用户裁决记录（2026-09-20，会话确认）
+- Push：暂缓。7 个本地提交（`d981457`…`3f8c6ac`，ahead 7 / behind 0）暂不推送，等待用户后续决定。
+- Stage 2（T2.x）：暂不开始，等待用户进一步指示。
+- 陈旧 LOCAL `device_profiles` 行（5556 覆盖安装后同机两条 `isLocalDevice=1`）：仅记录——不开清理/迁移任务、不修改代码（与本文件上文"不做迁移、旧数据可弃"的既有裁决一致）。
+- T1.x 偏差 D1–D6：已于 2026-09-20 向用户提交完整细节（位置/做法/理由/风险）。D5 经提交级 grep 核实：`3b0e1c2` 中唯一一处级别降级为 `CloudSettingsManager.kt` 的 `Log.i`→`DsimLog.d`（"migrated plaintext password to sealed storage"），其余全部转换保持原级别（w→w、e→e、d→d）。用户本轮尚未裁决 D1–D6，全部维持现状；裁决结果待后续补记。
