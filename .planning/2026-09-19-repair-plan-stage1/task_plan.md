@@ -4,7 +4,7 @@
 仅按 `修复计划_2026-09-19.md` 阶段 1 执行 T1.1–T1.5：每项一个独立 conventional commit、每项跑对应验收并保留真实输出，阶段末跑全量回归，然后停下等用户批准才进阶段 2。
 
 ## Next Step
-阶段 1 及其审查后跟进（F-1~F-5）全部完成并停下汇报。等待：①push（`origin/main...main` = 0/15，用户裁决暂缓）；②D1–D5 用户确认（D6 已由 F-2 收口）；③REFACTORING W23 可选清理是否批准（已登记，未实现）；④阶段 2（T2.x）暂不开始。
+本轮 F-6、防复发、F-7、F-8 已完成并分别提交；新装5554仪器20/20、JVM113/113通过，lint仍为已知5 errors/312 warnings。收尾FIXES与三件账本提交后停下等审查。push暂缓；D1–D5、W23和阶段2均不动，等待用户批准。
 
 ## Current Phase
 Complete
@@ -61,6 +61,27 @@ Complete
 - [x] FIXES 执行记录与 lint 验收（NewApi=0、5 errors / 312 warnings 与基线一致） — commit f516e68
 - **Status:** complete
 
+### Phase 9: 收尾审查 F-6 新装设备测试正确性
+- [x] GrantPermissionRule.grant(Manifest.permission.READ_SMS) 与空库 Assume；补 androidTest-only rules:1.5.0，不改产品代码。
+- [x] 起点无应用的5554全套20/20（0 skipped/failed），BUILD SUCCESSFUL in 3m；historyImport 46→46，二次 imported=0/skipped=46；commit c66a18b。
+- **Status:** complete
+
+### Phase 10: 防复发回归约定
+- [x] AGENTS §8.3 写明每轮回归至少一次新装/清数据仪器测试及设备状态依赖，commit 23c7e99。
+- **Status:** complete
+
+### Phase 11: F-7 文件树文件名边界
+- [x] 完整文件名 token 正则 + ERE 转义；Topics.kt 修前0/修后1且指名/删除后0，无残留，commit 21fea7d。
+- **Status:** complete
+
+### Phase 12: F-8 历史度量口径
+- [x] REFACTORING §1 只新增一句说明；去除此句后与起点全文相同，历史数字未改；commit 8fe7eb9。
+- **Status:** complete
+
+### Phase 13: 本轮回归、记录与交接
+- [x] 编译/JVM113/113（22s）；lint已知5 errors/312 warnings（exit1，NewApi=0）；9文件UTF8无BOM/LF；217受保护文件摘要一致；FIXES与三件账本收尾记录后提交并停下。
+- **Status:** complete
+
 ## Decisions Made
 | Decision | Rationale |
 |---|---|
@@ -83,3 +104,10 @@ Complete
 | `session_observe` 返回的是增量输出且有上限 | 长脚本一律 `exec > >(tee 证据文件)`，以文件为准 |
 | 首次 `verify-dsim.sh` = `PASS=8 FAIL=1`（no mutual discovery） | 脚本只 `am start` 主机；5556 在 `install -r` 后未被拉起、根本没连 broker。显式拉起两端并等双方 `subscribed` 后重跑 → 12/12 |
 | 第二次双机脚本报 `com.example.dsim not installed` | `connectedDebugAndroidTest` 结束时会卸载两个 APK（实测 `pm list packages` 计数 0）；重新 `onboard-device.sh` 后重跑 → 12/12 |
+
+### 本轮执行观察（2026-09-20 F-6~F-8）
+- 可选 rules 缓存目录探测使用 Get-ChildItem：路径当时不存在，辅助命令 exit1；改以 Gradle 依赖报告和实际构建验证，未调整系统配置。
+- F-8 首次 Python 控制台输出中文因默认编码显示乱码，但 UTF-8 解码与全文比对断言成功，文件未乱码；后续明确 PYTHONIOENCODING=utf-8 复核。
+
+- 本轮 lintDebug 真实失败：5 errors / 312 warnings，MissingSuperCall×1 + ChromeOS×4，NewApi=0；按用户指令仅记录，不改产品代码。
+- 收尾编排首次在本地 Python 解析 Windows 路径时发生 unicodeescape SyntaxError，尚未发出任何远端命令；改用 raw string 后继续，不涉及源码或测试失败。

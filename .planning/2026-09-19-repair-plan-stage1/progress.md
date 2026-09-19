@@ -66,3 +66,20 @@
 
 ## Error Log
 见 `task_plan.md` 的 Errors Encountered 表。
+
+## Session: 2026-09-20 收尾审查 F-6/F-7/F-8
+- 已执行起点 git log --oneline -8、git status、adb devices；5554 应用查询空输出。未安装应用、未手动 pm grant。
+- 本轮 MCP task=tsk_b776448cfe1265fd；严格按 F-6 → 回归约定 → F-7 → F-8 → 收尾顺序。
+
+### 本轮逐任务结果
+- F-6：c66a18b，权限规则+Assume+仅测试依赖。Gradle直接负责新装，20/20（0 skipped/failed），BUILD SUCCESSFUL in 3m，exit0；导入46条、重导0新增/46跳过。UTP结束后5554应用查询仍为空，未为双机回归重新安装。
+- 防复发：23c7e99，仅 AGENTS §8.3 加回归门槛。
+- F-7：21fea7d，Topics.kt探针修前exit0（复现误通过）；修后exit1且指名；file_edit删除后exit0，74文件，探针不存在；bash -n与diff --check通过。
+- F-8：8fe7eb9，仅新增一句；HISTORICAL_CONTENT_UNCHANGED=True，历史基线数值未改。
+- 已启动编译+强制JVM回归+lint复跑，session-1b0a8186ad601de74016771f，待收尾解析。
+
+### 本轮最终回归与交接
+- session-1b0a8186ad601de74016771f：编译+clean JVM成功22s（113/113）；lint失败1m3s（5 errors/312 warnings，NewApi=0），完整日志已保存，未为绿灯改产品代码。
+- f6-f8-final-verify-20260920.py：217受保护文件摘要完全一致；9个改动文件UTF8/BOM0/CR0/末尾LF；MAIN_DIFF_EMPTY=True；仪器20/20、目标historyImport未跳过；两种diff --check通过。
+- F-6 c66a18b；回归约定23c7e99；F-7 21fea7d；F-8 8fe7eb9；本次FIXES与既有三件账本另做独立收尾commit。
+- 未push；5554仍未安装应用（UTP卸载后未恢复）；不清理既有脏项；不开始阶段2。停止执行，等待用户转达审查。

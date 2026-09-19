@@ -51,3 +51,25 @@
 - Stage 2（T2.x）：暂不开始，等待用户进一步指示。
 - 陈旧 LOCAL `device_profiles` 行（5556 覆盖安装后同机两条 `isLocalDevice=1`）：仅记录——不开清理/迁移任务、不修改代码（与本文件上文"不做迁移、旧数据可弃"的既有裁决一致）。
 - T1.x 偏差 D1–D6：已于 2026-09-20 向用户提交完整细节（位置/做法/理由/风险）。D5 经提交级 grep 核实：`3b0e1c2` 中唯一一处级别降级为 `CloudSettingsManager.kt` 的 `Log.i`→`DsimLog.d`（"migrated plaintext password to sealed storage"），其余全部转换保持原级别（w→w、e→e、d→d）。用户本轮尚未裁决 D1–D6，全部维持现状；裁决结果待后续补记。
+
+## 2026-09-20 收尾审查续作（F-6/F-7/F-8）
+- 起点 HEAD=8ee0cf5；origin/main...main=0/15；5554、5556 均在线；5554 `pm list packages com.example.dsim` 空输出，尚未预装/授权。
+- 已读指定审查、AGENTS、修复计划、FIXES 与本账本。仅 DeviceIdentityTest 触及系统 SMS/导入器；现有 systemCount 的 assertTrue 是第二个前提缺失。
+- F-6 仅测试与必要测试依赖；采用 Assume 空库跳过，不播种/改系统短信。F-7 用 Topics.kt 验证 CloudTopics.kt 不能误覆盖。
+- 既有未提交/未跟踪内容全保留；不改审查方账本、不新建计划目录。显式 PLAN_ID/PWF_PLAN_ROOT 进程级绑定；.active_plan 不写。
+
+### 本轮已完成项与证据
+- F-6 c66a18b：仅 DeviceIdentityTest + androidTestImplementation("androidx.test:rules:1.5.0")；READ_SMS 为唯一新增权限规则，空库 Assume。
+- 5554 新装前提在 Gradle 调用前再次断言：无 com.example.dsim 包；未预装、未手动 pm grant。session-bbbd4ed9696345c78e55717c exit0：20/20 completed (0 skipped) (0 failed)，BUILD SUCCESSFUL in 3m。XML tests=20/failures=0/errors=0/skipped=0；historyImport first(scanned=46,imported=46,skipped=0)，second(scanned=46,imported=0,skipped=46)，rows=46->46 system=46。空库跳过分支本机未触发，不声称另做了空库设备验收。
+- 防复发 23c7e99：AGENTS §8.3 一条约定，每轮仪器回归至少一次新装/清数据。
+- F-7 21fea7d：ERE 转义 + 空白/行首行尾边界，匹配完整文件名 token。Topics.kt 探针：旧脚本误通过75文件exit0 → 新脚本缺1文件且指名exit1 → 删除后74文件exit0，Test-Path=False。
+- F-8 8fe7eb9：只增 AGENTS §5 + 脚本活口径说明；删除新增句后全文等于8ee0cf5，历史数字不改。
+- 保护基线：217 文件（既有计划但不含本账本、审查文档、只读资料、app/src/main 全部），路径排序+内容摘要的 SHA256=de7714eb2fd0a8afe50374e6085140354bc015f3f9e2b2d72c6c355353430cac。
+- 本轮证据仍在既有仓库外目录 C:\Users\admin\AgentDock\dsim-stage1-evidence：f6-fresh-install-20260920.sh / part1.log / part2.log（日志全名含 f6-fresh-install-20260920- 前缀）、f6-report-verification-20260920.log、f7-boundary-probe-20260920.log、f8-history-preservation-20260920.log。
+
+### 本轮收尾核验
+- 编译与强制JVM回归：BUILD SUCCESSFUL in 22s，17份XML共113例，failures/errors/skipped均0。
+- lintDebug：BUILD FAILED in 1m 3s，exit1；5 errors/312 warnings，错误为MissingSuperCall×1 + ChromeOS×4，NewApi=0；未抑制/改基线/动产品代码。
+- 217受保护文件摘要与起点相同；app/src/main相对8ee0cf5无diff。9个本轮源/文档UTF8、无BOM、CR=0、末尾LF；工作区与提交区间diff --check通过。
+- 原始仪器XML已保存为 f6-instrumented-result-20260920.xml；全局输出 f6-f8-regression-20260920.log；最终核验脚本/日志 f6-f8-final-verify-20260920.py/.log（均既有仓库外证据目录）。
+- 本轮未额外跑双机E2E/低API/真机；没有变更相关产品链路。push暂缓、D1–D5/W23未批准、阶段2不开始。旧T1.3记录中的pm grant是当时绕行，F-6现已将权限前提写入测试，不再以该绕行为修复证据。
