@@ -42,8 +42,15 @@ object CredentialVault {
             .generateKey()
     }
 
+    /**
+     * Test seam (T1.5): when non-null, [seal] delegates to it, so the plaintext-fallback path can be
+     * exercised on a device whose Keystore works. No production code ever assigns this.
+     */
+    internal var sealOverride: ((String) -> String?)? = null
+
     /** Null when the Keystore refuses (no key could be made); caller decides what to do. */
     fun seal(plaintext: String): String? {
+        sealOverride?.let { return it(plaintext) }
         return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key(createIfMissing = true))

@@ -74,6 +74,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnSaveCloudConfig: Button
     private lateinit var btnConnectCloudSetting: Button
     private lateinit var tvCloudConnectionStatus: TextView
+    private lateinit var tvCredentialStorageWarning: TextView
     private lateinit var switchAutoConnectSetting: Switch
     private lateinit var switchAutoReconnectSetting: Switch
     private lateinit var switchRemoteSendAllowed: Switch
@@ -144,6 +145,7 @@ class SettingsActivity : AppCompatActivity() {
         btnSaveCloudConfig = findViewById(R.id.btnSaveCloudConfig)
         btnConnectCloudSetting = findViewById(R.id.btnConnectCloudSetting)
         tvCloudConnectionStatus = findViewById(R.id.tvCloudConnectionStatus)
+        tvCredentialStorageWarning = findViewById(R.id.tvCredentialStorageWarning)
         switchAutoConnectSetting = findViewById(R.id.switchAutoConnectSetting)
         switchAutoReconnectSetting = findViewById(R.id.switchAutoReconnectSetting)
         switchRemoteSendAllowed = findViewById(R.id.switchRemoteSendAllowed)
@@ -861,6 +863,11 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshCloudConnectionUi() {
+        // T1.5: a Keystore that refuses to seal must never degrade silently. Shown in every usage
+        // mode, so it is evaluated before the local-mode branch below returns early.
+        tvCredentialStorageWarning.visibility =
+            if (CloudSettingsManager.isPasswordPlaintextFallback(this)) View.VISIBLE else View.GONE
+
         val isConnected = MqttSyncService.isConnected()
         val hasConfig = CloudSettingsManager.hasConnectionConfig(this)
         val config = CloudSettingsManager.getConfig(this)

@@ -221,6 +221,17 @@ object CloudSettingsManager {
         return reason
     }
 
+    /**
+     * True while the group password sits unsealed because [CredentialVault.seal] refused (T1.5).
+     * Saving stays possible so the user is not locked out; the settings screen must show a
+     * persistent warning instead of degrading silently. [readPassword] retries sealing on every
+     * read, so the state clears itself once the Keystore works again.
+     */
+    fun isPasswordPlaintextFallback(context: Context): Boolean =
+        !context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_PASSWORD, null)
+            .isNullOrEmpty()
+
     /** True when the password is stored sealed (for diagnostics / settings display). */
     fun isPasswordSealed(context: Context): Boolean =
         CredentialCodec.isSealed(

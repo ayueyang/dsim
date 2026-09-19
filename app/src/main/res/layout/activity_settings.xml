@@ -340,6 +340,18 @@
                 android:textColor="#475569"
                 android:textSize="13sp" />
 
+            <TextView
+                android:id="@+id/tvCredentialStorageWarning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="#FEF2F2"
+                android:padding="12dp"
+                android:text="口令当前以明文存储（本机 Keystore 不可用）"
+                android:textColor="#B91C1C"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
             <Switch
                 android:id="@+id/switchAutoConnectSetting"
                 android:layout_width="match_parent"
