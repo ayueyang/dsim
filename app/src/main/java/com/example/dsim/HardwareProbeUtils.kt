@@ -2,6 +2,7 @@ package com.example.dsim
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
@@ -235,7 +236,13 @@ object HardwareProbeUtils {
 
         for (slotIndex in 0 until phoneCount) {
             val simState = try {
-                telephonyManager.getSimState(slotIndex)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    telephonyManager.getSimState(slotIndex)
+                } else if (slotIndex == 0) {
+                    telephonyManager.simState
+                } else {
+                    TelephonyManager.SIM_STATE_UNKNOWN
+                }
             } catch (e: Exception) {
                 Log.d(TAG, "getSimState($slotIndex) failed: ${e.message}")
                 if (slotIndex == 0) telephonyManager.simState else TelephonyManager.SIM_STATE_UNKNOWN
@@ -288,13 +295,15 @@ object HardwareProbeUtils {
         activeList: List<SubscriptionInfo>,
         slotIndex: Int
     ): Int? {
-        @Suppress("DEPRECATION")
-        try {
-            subscriptionManager.getSubscriptionIds(slotIndex)
-                ?.firstOrNull { SubscriptionManager.isValidSubscriptionId(it) }
-                ?.let { return it }
-        } catch (e: Exception) {
-            Log.d(TAG, "getSubscriptionIds($slotIndex) failed: ${e.message}")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
+            try {
+                subscriptionManager.getSubscriptionIds(slotIndex)
+                    ?.firstOrNull { SubscriptionManager.isValidSubscriptionId(it) }
+                    ?.let { return it }
+            } catch (e: Exception) {
+                Log.d(TAG, "getSubscriptionIds($slotIndex) failed: ${e.message}")
+            }
         }
 
         try {
