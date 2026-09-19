@@ -34,7 +34,9 @@ missing=()
 # 遍历 main 源集全部 .kt；以文件名为键匹配树条目（文件树按同类分组，键不重复）
 while IFS= read -r path; do
   name="${path##*/}"
-  if ! grep -qF "$name" <<<"$TREE"; then
+  # 文件名按独立 token 匹配，避免 Topics.kt 被 CloudTopics.kt 的子串命中（F-7）。
+  name_regex="$(printf '%s' "$name" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
+  if ! grep -qE "(^|[[:space:]])${name_regex}([[:space:]]|$)" <<<"$TREE"; then
     missing+=("$path")
   fi
 done < <(find app/src/main -name '*.kt' | LC_ALL=C sort)
