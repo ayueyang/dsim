@@ -102,7 +102,8 @@ internal class MqttInboundHandler(
                     HistoryQueueNotificationHelper.refresh(context)
                     syncRemoteSimsFromPong(inbound)
                     HistorySyncQueueManager.evaluateAndMaybeStartLocal(context)
-                    MqttSyncService.radarEventFlow.emit(decryptedJson)
+                    // tryEmit: a stalled UI collector must not hold the commit gate (W22).
+                    MqttSyncService.radarEventFlow.tryEmit(decryptedJson)
                 }
                 return InboundOutcome.Committed
             }

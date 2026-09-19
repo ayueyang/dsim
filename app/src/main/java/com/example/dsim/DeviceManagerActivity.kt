@@ -21,7 +21,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.dsim.database.DeviceHistoryRecord
 import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.DsimDatabase
@@ -81,8 +83,11 @@ class DeviceManagerActivity : AppCompatActivity() {
         btnToggleColorIdentity.setOnClickListener { toggleColorIdentity() }
 
         lifecycleScope.launch {
-            MqttSyncService.radarEventFlow.collect {
-                renderDashboard("收到设备响应，列表已刷新")
+            // Only collect while visible: a stopped activity must not consume radar events.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                MqttSyncService.radarEventFlow.collect {
+                    renderDashboard("收到设备响应，列表已刷新")
+                }
             }
         }
 

@@ -24,7 +24,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.dsim.database.DeviceProfile
 import com.example.dsim.database.DsimDatabase
 import kotlinx.coroutines.Dispatchers
@@ -564,9 +566,12 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun observeDeviceRadarUpdates() {
         lifecycleScope.launch {
-            MqttSyncService.radarEventFlow.collect {
-                if (historyQueueDialog?.isShowing == true) {
-                    updateHistoryQueueDialog(currentHistoryState)
+            // Only collect while visible: a stopped activity must not consume radar events.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                MqttSyncService.radarEventFlow.collect {
+                    if (historyQueueDialog?.isShowing == true) {
+                        updateHistoryQueueDialog(currentHistoryState)
+                    }
                 }
             }
         }

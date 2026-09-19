@@ -79,7 +79,15 @@ class MqttSyncService : Service() {
         @Volatile private var staticConfig: CloudSettingsManager.CloudConfig? = null
         @Volatile private var manualDisconnectInCurrentSession: Boolean = false
 
-        val radarEventFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>()
+        /**
+         * Device-radar hints for the UI. Buffered + DROP_OLDEST so a backgrounded or stalled
+         * collector can never suspend the inbound handler, which emits from inside the
+         * InboundCommitGate critical section (W22). Collectors must be lifecycle-aware.
+         */
+        val radarEventFlow = kotlinx.coroutines.flow.MutableSharedFlow<String>(
+            extraBufferCapacity = 64,
+            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        )
         val connectionStateFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
         private val historyImportAckWaiters =
             ConcurrentHashMap<String, CompletableDeferred<HistorySyncAck>>()
