@@ -3,6 +3,7 @@ package com.example.dsim
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.annotation.VisibleForTesting
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -44,9 +45,16 @@ object CredentialVault {
 
     /**
      * Test seam (T1.5): when non-null, [seal] delegates to it, so the plaintext-fallback path can be
-     * exercised on a device whose Keystore works. No production code ever assigns this.
+     * exercised on a device whose Keystore works. Guarded (F-2/D6): the setter [check]s
+     * [BuildConfig.DEBUG], so no production path can assign it — misuse crashes the caller instead
+     * of silently bypassing the Keystore. No production code ever assigns this.
      */
+    @VisibleForTesting
     internal var sealOverride: ((String) -> String?)? = null
+        set(value) {
+            check(BuildConfig.DEBUG) { "sealOverride is a debug/test-only seam (F-2)" }
+            field = value
+        }
 
     /** Null when the Keystore refuses (no key could be made); caller decides what to do. */
     fun seal(plaintext: String): String? {
