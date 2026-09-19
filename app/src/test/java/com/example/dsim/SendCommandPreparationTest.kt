@@ -3,7 +3,10 @@ package com.example.dsim
 import android.database.sqlite.SQLiteException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
 

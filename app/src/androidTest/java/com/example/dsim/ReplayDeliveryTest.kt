@@ -8,7 +8,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 

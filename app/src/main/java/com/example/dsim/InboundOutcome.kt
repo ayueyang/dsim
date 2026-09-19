@@ -1,7 +1,9 @@
 package com.example.dsim
 
+import android.database.sqlite.SQLiteException
 import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.CancellationException
+import java.io.IOException
 
 /** Only committed work or a permanent protocol rejection may release MQTT delivery. */
 internal enum class InboundOutcome {
@@ -13,7 +15,7 @@ internal enum class InboundOutcome {
         fun fromFailure(error: Exception): InboundOutcome = when (error) {
             is CancellationException -> throw error
             is JsonSyntaxException -> PermanentlyRejected
-            // SQLiteException / IOException and unclassified failures must not lose delivery.
+            is SQLiteException, is IOException -> RetryableFailure
             // Unknown failures can repeat until diagnosed; that is safer than silent data loss.
             else -> RetryableFailure
         }
