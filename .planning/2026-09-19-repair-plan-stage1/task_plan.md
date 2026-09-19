@@ -4,7 +4,7 @@
 仅按 `修复计划_2026-09-19.md` 阶段 1 执行 T1.1–T1.5：每项一个独立 conventional commit、每项跑对应验收并保留真实输出，阶段末跑全量回归，然后停下等用户批准才进阶段 2。
 
 ## Next Step
-阶段 1 已全部完成并停下汇报，等用户批准阶段 2；同时等两项裁决：①5 个提交是否 push（当前 ahead 5）；②覆盖安装后 `device_profiles` 残留旧 ANDROID_ID 本机档案（同机两条 `isLocalDevice=1`）是否开新任务清理。
+阶段 1 及其审查后跟进（F-1~F-5）全部完成并停下汇报。等待：①push（`origin/main...main` = 0/15，用户裁决暂缓）；②D1–D5 用户确认（D6 已由 F-2 收口）；③REFACTORING W23 可选清理是否批准（已登记，未实现）；④阶段 2（T2.x）暂不开始。
 
 ## Current Phase
 Complete
@@ -50,6 +50,15 @@ Complete
 - [x] `verify-dsim.sh emulator-5554 emulator-5556`：`PASS=12 FAIL=0`、exit 0（两次 harness 失败已定位并重跑，见 FIXES）。
 - [x] 自回声/isLocalDevice/跨设备单份落库：5554 `skip own echo` 1 行；两台各 1 行同 UUID `fb2add1a…`、`sync_outbox` 均 0；两侧 `device_profiles` 各只有 1 条 LOCAL。
 - [x] `tmp_dbpull/` 删除；`git status` 仅剩审查方脏项、只读文档、两个冒烟目录与本账本；5 个提交 ahead 5 未 push。
+- **Status:** complete
+
+### Phase 8: 审查后跟进 F-1~F-5（2026-09-20）
+- [x] F-1 `scripts/check-agents-tree.sh` + AGENTS §5 补 10 项（首跑如实列出缺失、探针负面验证 exit 1/还原 exit 0）；三处易失数字标注重改为指向源码（55/14300 头注、MqttSyncService 568 行标称、DsimDao 40 计数——实测 46） — commit e4f5ea1
+- [x] F-2 `sealOverride` 加 `@VisibleForTesting` + setter `check(BuildConfig.DEBUG)` — commit 4ec7c3f；build 绿
+- [x] F-3 C7 例外（APPLY_LOCAL_MODE 的 OFFLINE 告别）登记 — commit e5b7415
+- [x] F-4 FIXES 补对端残留影响面 + REFACTORING 登记 W23（可选·未批准） — commit b84f56b
+- [x] F-5 `redact()` ≥7 位数字串副作用写入 KDoc — commit fc70d45
+- [x] FIXES 执行记录与 lint 验收（NewApi=0、5 errors / 312 warnings 与基线一致） — commit f516e68
 - **Status:** complete
 
 ## Decisions Made

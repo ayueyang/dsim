@@ -40,6 +40,17 @@
 - `stage1-dualdevice2.sh`（session-66b18f42855490811ef2e255）：重新 onboard 5554 → 双方 `subscribed dsim/test/9f3a2b` → `verify-dsim.sh 5554 5556` = **`PASS=12 FAIL=0`、VERIFY_EXIT=0**；跨设备注入 `STAGE1_XDEV_1789833464`：5554 `skip own echo`=1、5556=0；两台各 1 行同 UUID `fb2add1a-bc37-40d8-ad42-ab9c2da3758f`、`deviceId=63fcfafde93645a0aa48cdf5e227501f`、`status=1`、`sync_outbox`=0；`device_profiles` 两侧各 1 条 LOCAL（5554 local=`63fcfefd…`，5556 local=`fa9e4551…`）。`tmp_dbpull` 已删。
 - 工作区：仅审查方 3 个修改 + 只读未跟踪文档 + 两个冒烟目录 + 本账本目录；`ahead 5` 未 push。
 
+## Session: 2026-09-20 审查后跟进（F-1~F-5）
+
+- 偏移修正：起手发现 `.planning/.active_plan` 为 `2026-09-19-arena-skill-check-7d9c2f64`（上一技能烟测轮次遗留，即 git status 中那笔 M），已按任务书意图改指 `2026-09-19-repair-plan-stage1`；保持未提交状态不动其余审查方脏项。
+- F-1：`scripts/check-agents-tree.sh` 创建（UTF-8 LF）；首跑 `EXIT=1` 如实列出 10 个遗漏（CloudConfigMessages/CloudTopics/CredentialCodec/CredentialVault/DsimLog/HeartbeatPolicy/NotificationPreferences/ReconnectPolicy/ReplayGuard/SendCostPolicy）；补树 + 探针 `ZzTreeCheckProbe.kt` 负面验证 `EXIT=1`、删除后 `OK：…覆盖全部 74 个 main Kotlin 源文件。EXIT=0`；发现 10 行缩进瑕疵 → amend 未推送提交；最终 commit e4f5ea1。
+- F-2：compile+assembleDebug `BUILD_EXIT=0`；commit 4ec7c3f。
+- F-3：编辑后 `check-agents-tree.sh` 仍 exit 0；commit e5b7415。
+- F-4：两文档 `BOM False / CR 0`；commit b84f56b。
+- F-5：`BUILD SUCCESSFUL in 38s`、`FINAL JVM tests=113 failures=0 errors=0`；commit fc70d45。
+- lint：`:app:lintDebug` → 文本报尾部 `5 errors, 312 warnings`（基线一致）、`NewApi_count=0`。
+- FIXES 记录段追加（末尾补漏掉的尾换行 → amend）→ commit f516e68。
+
 ## Test Results
 | 项 | 期望 | 实测 | 结论 |
 |---|---|---|---|
