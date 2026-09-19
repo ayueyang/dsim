@@ -61,7 +61,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 **两条主链路（务必记住真实走向）：**
 
 - 入站短信：`SmsReceiver` → 标准化 → 解析归属卡 → **`SyncOutbox.storeIncomingSms` 在同一事务里写 `sms_messages` + `sync_outbox`** → 回写系统库 → 发通知 → `startForegroundService(ACTION_FLUSH_OUTBOX)`。Receiver **不再触碰 MQTT 客户端**；真正的发布由 `MqttSyncService.flushOutbox()` 在连接建立 / 重连 / 心跳 / 显式冲刷时通过 `SyncOutbox.flush` 完成，QoS1 PUBACK 后才删行。断网时短信落库但留在发件箱，通知栏显示「N 条短信待同步」。
-- 入站云端消息（对端发来的短信 / 控制消息）：Paho `messageArrived` → `InboundDispatcher.onMessage`（按 topic 丢自身回声并立即 ack）→ `serviceScope` 内 `MqttInboundHandler.handleIncomingMessage`（解密 → 解码 → `ReplayGuard` → 分发 → Room 落库）→ **处理器返回后才 `messageArrivedComplete` 发 PUBACK**（C24）。进程在落库前死亡则该消息不被 ack，Broker 在下个持久会话重投。
+- 入站云端消息（对端发来的短信 / 控制消息）：Paho `messageArrived` → `InboundDispatcher.onMessage`（自身回声按 topic 后缀丢弃并立即 ack，处理器不运行）→ `serviceScope` 内 `MqttInboundHandler.handleIncomingMessage`（解密 → `MqttPayloadCodec.decode` → `InboundCommitGate` 串行执行「`ReplayGuard` 校验 → 分发 → Room 落库 → 提交成功后标记 nonce」；同一把 Mutex 覆盖检查与提交，防止并发同 nonce 双通过，代价是入站处理严格串行，见 `REFACTORING.md` W22）→ **三态 ack（C24）**：`Committed` 与 `PermanentlyRejected`（解码/协议错误、重放拒绝、隐私闸门拒绝）在处理器返回后才 `messageArrivedComplete` 发 PUBACK；`RetryableFailure`（SQLite/IO/未分类异常）不 ack，取消同样不 ack，留待下个持久会话重投。进程在落库前死亡则该消息不被 ack，Broker 在下个持久会话重投。
 - 出站短信：`SmsChatActivity` 预生成 uuid 并落库 status=0 → 发 `SEND_CMD` → 执行端 `OutgoingSmsDispatcher` 原子认领 UUID → SmsManager → `SmsSentResultReceiver` 汇总真实发送回调 → 回 `SEND_CMD_RESULT` → 发起端更新 status。认领后回调缺失不可自动重发。
 
 ---
@@ -124,19 +124,22 @@ dSIM/
         │   ├── AndroidManifest.xml         （不含 MainActivity，见 src/debug）
         │   ├── java/com/example/dsim/
         │   │   ├── database/
-        │   │   │   ├── DsimEntities.kt           5 个 @Entity
+        │   │   │   ├── DsimEntities.kt           6 个 @Entity
         │   │   │   ├── DsimDao.kt                40 个 DAO 方法
         │   │   │   └── DsimDatabase.kt           v7 + 6 次 Migration
         │   │   ├── MqttSyncService.kt            ★ 前台服务：连接生命周期 / 心跳循环 / 通知 / 冲刷发件箱（W4 后 568 行）
         │   │   ├── CloudSession.kt               当前组凭据（服务写，Publisher/Inbound 读）
         │   │   ├── MqttPublisher.kt              全部出站控制消息 + 心跳指纹（C13/C14 实现点）
         │   │   ├── InboundDispatcher.kt          messageArrived → 协程 → 处理完成后手动 PUBACK（C24 实现点）
+        │   │   ├── InboundOutcome.kt             入站三态提交结果（Committed / PermanentlyRejected / RetryableFailure）
+        │   │   ├── InboundCommitGate.kt          防重放检查 → 处理 → 提交成功才标记 nonce 的串行化闸门（Mutex）
         │   │   ├── MqttInboundHandler.kt         解密 → MqttPayloadCodec.decode → when(inbound) 分发
         │   │   ├── SyncOutbox.kt                 ★ 入站同步发件箱：事务入队 + 单飞冲刷
         │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
         │   │   ├── SmsSentResultReceiver.kt     系统发送回调
         │   │   ├── SendCommandPolicy.kt         分段状态纯逻辑
-        │   │   ├── DsimCryptoUtils.kt            ★ 加解密 V2（AEAD）
+        │   │   ├── SendCommandPreparation.kt     SEND_CMD 业务拒绝类型化 + 拒绝先落持久失败回执
+        │   │   ├── DsimCryptoUtils.kt            ★ 加解密 DSM3（AEAD）
         │   │   ├── HistorySyncQueueManager.kt    历史同步队列状态机
         │   │   ├── HistoryQueueNotificationHelper.kt
         │   │   ├── SmsReceiver.kt                ★ 入站采集
