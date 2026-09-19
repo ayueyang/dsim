@@ -102,7 +102,7 @@ class MqttPayloadCodecTest {
         val env = MqttPayloadCodec.decodeEnvelope(json)!!
         assertTrue(env.inbound is Ping)
         assertTrue(env.ts!! >= before && env.ts!! <= System.currentTimeMillis())
-        assertTrue(env.nonce!!.length >= 16)
+        assertTrue(env.nonce!!.matches(Regex("[A-Za-z0-9_-]{16}")))
         // two encodes of the same message never share a nonce
         val json2 = MqttPayloadCodec.encode(Ping(deviceId = "A"))
         assertTrue(MqttPayloadCodec.decodeEnvelope(json2)!!.nonce != env.nonce)

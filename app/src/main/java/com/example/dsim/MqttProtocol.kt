@@ -6,7 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonSyntaxException
 import java.security.SecureRandom
-import java.util.Base64
+import android.util.Base64
 
 /**
  * Wire protocol for the encrypted MQTT group channel (W5).
@@ -17,7 +17,7 @@ import java.util.Base64
  * older builds parse them by name.
  *
  * Decoding is lenient (unknown fields ignored, missing optionals default); encoding omits nulls.
- * This file is pure Kotlin + Gson so the codec is unit-testable on the JVM.
+ * Decoding uses Kotlin + Gson; nonce encoding uses Android Base64 for API 24 compatibility.
  */
 object MqttAction {
     const val SEND_CMD = "SEND_CMD"
@@ -169,7 +169,7 @@ object MqttPayloadCodec {
     private fun newNonce(): String {
         val bytes = ByteArray(12)
         random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
     /** [decode] plus the envelope; `ts`/`nonce` are null when absent or malformed. */
