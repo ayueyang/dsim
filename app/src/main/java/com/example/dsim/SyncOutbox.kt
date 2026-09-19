@@ -2,7 +2,6 @@ package com.example.dsim
 
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.room.withTransaction
 import com.example.dsim.database.DsimDatabase
@@ -135,7 +134,7 @@ object SyncOutbox {
                 Intent(context, MqttSyncService::class.java).apply { action = MqttSyncService.ACTION_FLUSH_OUTBOX }
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Could not start sync service for outbox flush; next tick will pick it up", e)
+            DsimLog.w(TAG, "Could not start sync service for outbox flush; next tick will pick it up", e)
         }
     }
 
@@ -210,14 +209,14 @@ object SyncOutbox {
                     } catch (e: Exception) {
                         val reason = e.message?.take(120) ?: e.javaClass.simpleName
                         dao.markOutboxAttempt(entry.id, reason)
-                        Log.w(TAG, "Outbox publish failed; will retry on next trigger", e)
+                        DsimLog.w(TAG, "Outbox publish failed; will retry on next trigger", e)
                         lastError = reason.take(40); failed++; break@loop
                     }
                 }
             }
             val remaining = dao.countOutbox()
             if (sent + dropped + failed > 0) {
-                Log.d(TAG, "flush sent=$sent dropped=$dropped failed=$failed remaining=$remaining")
+                DsimLog.d(TAG, "flush sent=$sent dropped=$dropped failed=$failed remaining=$remaining")
             }
             FlushResult(sent, dropped, failed, remaining, lastError)
         }

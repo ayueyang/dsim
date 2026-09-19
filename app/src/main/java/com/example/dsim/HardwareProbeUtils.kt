@@ -6,7 +6,6 @@ import android.os.Build
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
-import android.util.Log
 import com.example.dsim.database.SimCardConfig
 import java.util.UUID
 
@@ -55,7 +54,7 @@ object HardwareProbeUtils {
         // commit(), not apply(): the identity must be on disk before this process can die, otherwise
         // the next process would mint a second id and split this device's history.
         if (!prefs.edit().putString(KEY_DEVICE_ID, generated).commit()) {
-            Log.w(TAG, "identity prefs commit failed; deviceId may change on next launch")
+            DsimLog.w(TAG, "identity prefs commit failed; deviceId may change on next launch")
         }
         return generated
     }
@@ -126,7 +125,7 @@ object HardwareProbeUtils {
                     info.iccId == iccid
                 } catch (e: SecurityException) {
                     // READ_PRIVILEGED_PHONE_STATE not held on this OEM; caller falls back to slot match.
-                    Log.d(TAG, "iccId unreadable for sub ${info.subscriptionId}: ${e.message}")
+                    DsimLog.d(TAG, "iccId unreadable for sub ${info.subscriptionId}: ${e.message}")
                     false
                 }
             }?.subscriptionId?.let { return it }
@@ -195,7 +194,7 @@ object HardwareProbeUtils {
                 list += getFallbackSlotBasedSimInfo(telephonyManager, deviceId)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "SIM enumeration failed; returning ${list.size} entries collected so far", e)
+            DsimLog.w(TAG, "SIM enumeration failed; returning ${list.size} entries collected so far", e)
         }
 
         return list
@@ -275,7 +274,7 @@ object HardwareProbeUtils {
                     TelephonyManager.SIM_STATE_UNKNOWN
                 }
             } catch (e: Exception) {
-                Log.d(TAG, "getSimState($slotIndex) failed: ${e.message}")
+                DsimLog.d(TAG, "getSimState($slotIndex) failed: ${e.message}")
                 if (slotIndex == 0) telephonyManager.simState else TelephonyManager.SIM_STATE_UNKNOWN
             }
 
@@ -286,7 +285,7 @@ object HardwareProbeUtils {
             val phoneNum = try {
                 telephonyManager.line1Number ?: ""
             } catch (e: Exception) {
-                Log.d(TAG, "line1Number unavailable: ${e.message}")
+                DsimLog.d(TAG, "line1Number unavailable: ${e.message}")
                 ""
             }
 
@@ -316,7 +315,7 @@ object HardwareProbeUtils {
         return try {
             subscriptionManager.activeSubscriptionInfoList.orEmpty()
         } catch (e: Exception) {
-            Log.w(TAG, "activeSubscriptionInfoList failed", e)
+            DsimLog.w(TAG, "activeSubscriptionInfoList failed", e)
             emptyList()
         }
     }
@@ -333,7 +332,7 @@ object HardwareProbeUtils {
                     ?.firstOrNull { SubscriptionManager.isValidSubscriptionId(it) }
                     ?.let { return it }
             } catch (e: Exception) {
-                Log.d(TAG, "getSubscriptionIds($slotIndex) failed: ${e.message}")
+                DsimLog.d(TAG, "getSubscriptionIds($slotIndex) failed: ${e.message}")
             }
         }
 
@@ -342,7 +341,7 @@ object HardwareProbeUtils {
                 ?.subscriptionId
                 ?.let { return it }
         } catch (e: Exception) {
-            Log.d(TAG, "getActiveSubscriptionInfoForSimSlotIndex($slotIndex) failed: ${e.message}")
+            DsimLog.d(TAG, "getActiveSubscriptionInfoForSimSlotIndex($slotIndex) failed: ${e.message}")
         }
 
         return activeList.firstOrNull { it.simSlotIndex == slotIndex }?.subscriptionId
@@ -359,10 +358,10 @@ object HardwareProbeUtils {
             }
             info.iccId?.takeIf { it.isNotBlank() } ?: telephonyManager.simSerialNumber?.takeIf { it.isNotBlank() }
         } catch (e: SecurityException) {
-            Log.d(TAG, "ICCID not readable: ${e.message}")
+            DsimLog.d(TAG, "ICCID not readable: ${e.message}")
             null
         } catch (e: Exception) {
-            Log.w(TAG, "ICCID read failed", e)
+            DsimLog.w(TAG, "ICCID read failed", e)
             null
         }
     }
@@ -371,7 +370,7 @@ object HardwareProbeUtils {
         return try {
             info.number?.takeIf { it.isNotBlank() } ?: ""
         } catch (e: Exception) {
-            Log.d(TAG, "subscription number not readable: ${e.message}")
+            DsimLog.d(TAG, "subscription number not readable: ${e.message}")
             ""
         }
     }

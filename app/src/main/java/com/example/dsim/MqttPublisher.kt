@@ -2,7 +2,6 @@ package com.example.dsim
 
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import com.example.dsim.database.DsimDatabase
 import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttMessage
@@ -95,7 +94,7 @@ internal class MqttPublisher(
 
             val encryptedPing = DsimCryptoUtils.encryptOrNull(pingJson, session.password)
             if (encryptedPing == null) {
-                Log.e("dSIM_SyncService", "PING 加密失败")
+                DsimLog.e("dSIM_SyncService", "PING 加密失败")
                 return
             }
 
@@ -104,7 +103,7 @@ internal class MqttPublisher(
             }
             client()?.publish(localPublishTopic(), pingMessage)
         } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "发送 PING 失败", e)
+            DsimLog.e("dSIM_SyncService", "发送 PING 失败", e)
         }
     }
 
@@ -190,7 +189,7 @@ internal class MqttPublisher(
 
             val encryptedPayload = DsimCryptoUtils.encryptOrNull(payloadJson, session.password)
             if (encryptedPayload == null) {
-                Log.e("dSIM_SyncService", "设备快照加密失败")
+                DsimLog.e("dSIM_SyncService", "设备快照加密失败")
                 return
             }
 
@@ -205,9 +204,9 @@ internal class MqttPublisher(
             }
             val sinceLast = now - heartbeatState.lastPublishedAt
             heartbeatState = HeartbeatPolicy.afterPublish(fingerprint, now)
-            Log.d("dSIM_SyncService", "PONG published reason=$reason sinceLast=${sinceLast}ms")
+            DsimLog.d("dSIM_SyncService", "PONG published reason=$reason sinceLast=${sinceLast}ms")
         } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "广播设备资料失败", e)
+            DsimLog.e("dSIM_SyncService", "广播设备资料失败", e)
         }
     }
 
@@ -230,7 +229,7 @@ internal class MqttPublisher(
                 MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
         } catch (e: Exception) {
             // Best effort by design; the Last Will covers the unclean case.
-            Log.d("dSIM_SyncService", "OFFLINE publish skipped: ${e.message}")
+            DsimLog.d("dSIM_SyncService", "OFFLINE publish skipped: ${e.message}")
         }
     }
 }

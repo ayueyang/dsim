@@ -1,6 +1,5 @@
 package com.example.dsim
 
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,25 +37,25 @@ internal class InboundDispatcher(
     /** Returns the launched job (null for own echoes) so tests can await / cancel it. */
     fun onMessage(topic: String?, payload: String, messageId: Int, qos: Int, dup: Boolean): Job? {
         if (CloudTopics.isOwnEcho(baseTopic, topic, localDeviceId)) {
-            Log.d(TAG, "skip own echo on $topic")
+            DsimLog.d(TAG, "skip own echo on $topic")
             safeAck(messageId, qos)
             return null
         }
-        if (dup) Log.d(TAG, "broker redelivered id=$messageId dup=true on $topic")
+        if (dup) DsimLog.d(TAG, "broker redelivered id=$messageId dup=true on $topic")
         val senderFromTopic = CloudTopics.senderOf(baseTopic, topic)
         return scope.launch {
             val outcome = try {
                 handler(payload, senderFromTopic)
             } catch (e: CancellationException) {
-                Log.d(TAG, "inbound id=$messageId cancelled before commit; leaving it unacked for redelivery")
+                DsimLog.d(TAG, "inbound id=$messageId cancelled before commit; leaving it unacked for redelivery")
                 throw e
             } catch (e: Exception) {
                 InboundOutcome.fromFailure(e).also {
-                    Log.w(TAG, "inbound id=$messageId handler failed: $it", e)
+                    DsimLog.w(TAG, "inbound id=$messageId handler failed: $it", e)
                 }
             }
             if (outcome == InboundOutcome.RetryableFailure) {
-                Log.w(TAG, "inbound id=$messageId retryable failure; leaving it unacked for the next session")
+                DsimLog.w(TAG, "inbound id=$messageId retryable failure; leaving it unacked for the next session")
                 return@launch
             }
             ensureActive()
@@ -69,7 +68,7 @@ internal class InboundDispatcher(
             ack(messageId, qos)
         } catch (e: Exception) {
             // Client already torn down or superseded: the broker will simply redeliver.
-            Log.d(TAG, "ack id=$messageId failed: ${e.message}")
+            DsimLog.d(TAG, "ack id=$messageId failed: ${e.message}")
         }
     }
 

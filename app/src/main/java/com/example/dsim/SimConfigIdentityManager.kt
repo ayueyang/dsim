@@ -1,7 +1,6 @@
 package com.example.dsim
 
 import android.content.Context
-import android.util.Log
 import com.example.dsim.database.DsimDatabase
 
 object SimConfigIdentityManager {
@@ -40,7 +39,7 @@ object SimConfigIdentityManager {
                 )
             }
         } catch (e: Exception) {
-            Log.w("dSIM_SimIdentity", "Failed to enrich SIM identity columns", e)
+            DsimLog.w("dSIM_SimIdentity", "Failed to enrich SIM identity columns", e)
         }
     }
 }

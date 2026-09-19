@@ -191,7 +191,7 @@ object CloudSettingsManager {
         if (!sealed.isNullOrEmpty()) {
             val opened = CredentialVault.open(sealed)
             if (opened != null) return opened
-            android.util.Log.w("dSIM_Cloud", "sealed password unreadable; wiping credentials (user must re-enter)")
+            DsimLog.w("dSIM_Cloud", "sealed password unreadable; wiping credentials (user must re-enter)")
             prefs.edit()
                 .remove(KEY_BROKER).remove(KEY_TOPIC).remove(KEY_PASSWORD).remove(KEY_PASSWORD_ENC)
                 .putString(KEY_CREDENTIALS_RESET_REASON, RESET_REASON_KEY_LOST)
@@ -203,9 +203,9 @@ object CloudSettingsManager {
         val newlySealed = CredentialVault.seal(legacy)
         if (newlySealed != null) {
             prefs.edit().putString(KEY_PASSWORD_ENC, newlySealed).remove(KEY_PASSWORD).apply()
-            android.util.Log.i("dSIM_Cloud", "migrated plaintext password to sealed storage")
+            DsimLog.d("dSIM_Cloud", "migrated plaintext password to sealed storage")
         } else {
-            android.util.Log.w("dSIM_Cloud", "Keystore unavailable; password stays plaintext")
+            DsimLog.w("dSIM_Cloud", "Keystore unavailable; password stays plaintext")
         }
         return legacy
     }
@@ -254,7 +254,7 @@ object CloudSettingsManager {
             editor.putString(KEY_PASSWORD_ENC, sealed ?: "").remove(KEY_PASSWORD)
         } else {
             // Keystore refused; keep the user able to connect. Read path will retry sealing later.
-            android.util.Log.w("dSIM_Cloud", "Keystore unavailable; saving password plaintext")
+            DsimLog.w("dSIM_Cloud", "Keystore unavailable; saving password plaintext")
             editor.putString(KEY_PASSWORD, password).remove(KEY_PASSWORD_ENC)
         }
         editor.apply()

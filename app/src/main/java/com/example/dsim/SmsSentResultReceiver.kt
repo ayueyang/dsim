@@ -3,7 +3,6 @@ package com.example.dsim
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,7 +20,7 @@ class SmsSentResultReceiver : BroadcastReceiver() {
             try {
                 outcome = OutgoingSmsDispatcher.onSentResult(context.applicationContext, uuid, part, code)
             } catch (e: Exception) {
-                Log.e("dSIM_Send", "Failed to persist SMS sent callback", e)
+                DsimLog.e("dSIM_Send", "Failed to persist SMS sent callback", e)
             } finally {
                 pending.finish()
             }

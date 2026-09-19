@@ -20,7 +20,6 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
-import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -113,7 +112,7 @@ class SmsListActivity : AppCompatActivity() {
             )
         } catch (e: Exception) {
             // Provider may not grant a persistable permission; the picked image still works this session.
-            Log.d("dSIM_SmsList", "takePersistableUriPermission failed: ${e.message}")
+            DsimLog.d("dSIM_SmsList", "takePersistableUriPermission failed: ${e.message}")
         }
         profileEditorState?.let { state ->
             state.avatarMode = ConversationProfileStore.AVATAR_MODE_IMAGE
@@ -754,7 +753,7 @@ class SmsListActivity : AppCompatActivity() {
             imageView.setImageURI(Uri.parse(uriString))
             true
         } catch (e: Exception) {
-            Log.w("dSIM_SmsList", "avatar uri no longer readable: $uriString", e)
+            DsimLog.w("dSIM_SmsList", "avatar uri no longer readable: $uriString", e)
             false
         }
     }

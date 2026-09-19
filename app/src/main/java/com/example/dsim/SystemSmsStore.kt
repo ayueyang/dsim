@@ -3,7 +3,6 @@ package com.example.dsim
 import android.content.ContentValues
 import android.content.Context
 import android.provider.Telephony
-import android.util.Log
 
 object SystemSmsStore {
 
@@ -62,13 +61,13 @@ object SystemSmsStore {
         isSeen: Boolean
     ) {
         if (!DefaultSmsManager.isDefaultSmsApp(context)) {
-            Log.d(TAG, "Skip system SMS insert because app is not the default SMS app")
+            DsimLog.d(TAG, "Skip system SMS insert because app is not the default SMS app")
             return
         }
 
         try {
             if (hasSimilarMessage(context, address, body, type, timestamp, subscriptionId)) {
-                Log.d(TAG, "Skip duplicate system SMS insert: address=$address type=$type subId=$subscriptionId")
+                DsimLog.d(TAG, "Skip duplicate system SMS insert: address=${DsimLog.maskNumber(address)} type=$type subId=$subscriptionId")
                 return
             }
 
@@ -84,9 +83,9 @@ object SystemSmsStore {
             }
 
             val insertedUri = context.contentResolver.insert(targetUri, values)
-            Log.d(TAG, "Inserted system SMS row: uri=$insertedUri address=$address type=$type subId=$subscriptionId")
+            DsimLog.d(TAG, "Inserted system SMS row: uri=$insertedUri address=${DsimLog.maskNumber(address)} type=$type subId=$subscriptionId")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to insert SMS into system provider", e)
+            DsimLog.e(TAG, "Failed to insert SMS into system provider", e)
         }
     }
 

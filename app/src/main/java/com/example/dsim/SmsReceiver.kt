@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
-import android.util.Log
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CoroutineScope
@@ -83,12 +82,12 @@ open class SmsReceiver : BroadcastReceiver() {
                     SyncOutbox.requestFlush(context)
                 }
 
-                Log.d(
+                DsimLog.d(
                     "dSIM_Receiver",
-                    "Captured incoming SMS action=${intent.action}, from=$cleanAddress, subId=$subId, slotIndex=$slotIndex, mappingKey=${source.mappingKey}"
+                    "Captured incoming SMS action=${intent.action}, from=${DsimLog.maskNumber(cleanAddress)}, subId=$subId, slotIndex=$slotIndex, mappingKey=${source.mappingKey}"
                 )
             } catch (e: Exception) {
-                Log.e("dSIM_Receiver", "Failed to process incoming SMS", e)
+                DsimLog.e("dSIM_Receiver", "Failed to process incoming SMS", e)
             } finally {
                 pendingResult.finish()
             }

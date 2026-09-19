@@ -1,7 +1,6 @@
 package com.example.dsim
 
 import android.content.Context
-import android.util.Log
 import com.example.dsim.MqttSyncService.Companion.HistorySyncAck
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SimCardConfig
@@ -19,15 +18,22 @@ internal class MqttInboundHandler(
     private val publisher: MqttPublisher
 ) {
     private val commitGate = InboundCommitGate()
+    /** Only the action token is pulled out of an undecodable payload; the character class cannot
+     *  match free text, so no plaintext can leak through the hint (T1.4). */
+    private val actionHintPattern = Regex("\"action\"\\s*:\\s*\"([A-Za-z0-9_]{1,40})\"")
+
     private val lastRejectLogAt = java.util.EnumMap<ReplayGuard.Reason, Long>(ReplayGuard.Reason::class.java)
 
     /** One WARN per reason per minute; a replay flood must not turn into a log flood. */
+    private fun actionHint(json: String): String =
+        actionHintPattern.find(json)?.groupValues?.get(1) ?: "unknown"
+
     private fun logReplayReject(verdict: ReplayGuard.Verdict.Reject, inbound: MqttInbound, senderId: String) {
         val now = System.currentTimeMillis()
         val last = lastRejectLogAt[verdict.reason] ?: 0L
         if (now - last < 60_000L) return
         lastRejectLogAt[verdict.reason] = now
-        Log.w(
+        DsimLog.w(
             "dSIM_SyncService",
             "replay guard rejected ${inbound::class.java.simpleName} from ${senderId.ifBlank { "?" }}: " +
                 "${verdict.reason} (${verdict.detail})"
@@ -39,12 +45,17 @@ internal class MqttInboundHandler(
             if (!UsageModeManager.canUseCloud(context)) return InboundOutcome.PermanentlyRejected
             val decryptedJson = DsimCryptoUtils.decryptMessage(encryptedBase64, session.password)
             if (decryptedJson == null) {
-                Log.w("dSIM_SyncService", "拒绝无法解密的云端消息")
+                DsimLog.w("dSIM_SyncService", "拒绝无法解密的云端消息")
                 return InboundOutcome.PermanentlyRejected
             }
             val envelope = MqttPayloadCodec.decodeEnvelope(decryptedJson)
             if (envelope == null) {
-                Log.w("dSIM_SyncService", "忽略无法识别的云端消息: ${decryptedJson.take(200)}")
+                DsimLog.w(
+                    "dSIM_SyncService",
+                    // Never log a decrypted payload (T1.4): action / length / hash only.
+                    "忽略无法识别的云端消息: action=${actionHint(decryptedJson)} " +
+                        "length=${decryptedJson.length} hash=${DsimLog.fingerprint(decryptedJson)}"
+                )
                 return InboundOutcome.PermanentlyRejected
             }
             val senderId = MqttPayloadCodec.senderId(envelope.inbound).ifBlank { senderFromTopic.orEmpty() }
@@ -57,7 +68,7 @@ internal class MqttInboundHandler(
             throw e
         } catch (e: Exception) {
             val outcome = InboundOutcome.fromFailure(e)
-            Log.e("dSIM_SyncService", "处理云端消息失败: $outcome", e)
+            DsimLog.e("dSIM_SyncService", "处理云端消息失败: $outcome", e)
             return outcome
         }
     }
@@ -77,7 +88,7 @@ internal class MqttInboundHandler(
         val payload: SyncPayload = when (inbound) {
             is Offline -> {
                 if (senderId.isNotBlank() && senderId != localDeviceId) {
-                    Log.d("dSIM_SyncService", "peer OFFLINE: $senderId")
+                    DsimLog.d("dSIM_SyncService", "peer OFFLINE: $senderId")
                     DeviceDirectoryManager.markOffline(context, senderId)
                     HistoryQueueNotificationHelper.refresh(context)
                 }
@@ -255,7 +266,7 @@ internal class MqttInboundHandler(
             // dispatcher (it never reaches the carrier), so check that first.
             val existing = dao.getSendCommand(uuid)
             if (existing == null) {
-                Log.w("dSIM_SyncService", "Rejected SEND_CMD from $requester: remote send disabled on this device")
+                DsimLog.w("dSIM_SyncService", "Rejected SEND_CMD from $requester: remote send disabled on this device")
                 publisher.publishSendCommandResult(uuid, requester, false, SendCostPolicy.REMOTE_SEND_DISABLED_MESSAGE)
                 return
             }
@@ -273,7 +284,7 @@ internal class MqttInboundHandler(
                     dao.updateMessageStatus(uuid, -1, e.message)
                     publisher.publishSendCommandResult(uuid, requester, false, e.message ?: "发送准备失败")
                 }
-                Log.e("dSIM_SyncService", "Failed to prepare send command", e)
+                DsimLog.e("dSIM_SyncService", "Failed to prepare send command", e)
             }
         )
     }

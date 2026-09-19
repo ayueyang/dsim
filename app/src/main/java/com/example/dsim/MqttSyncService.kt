@@ -13,7 +13,6 @@ import android.net.Network
 import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.annotation.WorkerThread
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CompletableDeferred
@@ -120,7 +119,7 @@ class MqttSyncService : Service() {
             val client = globalMqttClient
             if (active == null || client == null || !client.isConnected) return false
             if (active.topic != topic || active.password != password) {
-                Log.w("dSIM_SyncService", "publish rejected: requested group is not the active one")
+                DsimLog.w("dSIM_SyncService", "publish rejected: requested group is not the active one")
                 return false
             }
             return try {
@@ -131,7 +130,7 @@ class MqttSyncService : Service() {
                 )
                 true
             } catch (e: Exception) {
-                Log.w("dSIM_SyncService", "publish failed: ${e.message}", e)
+                DsimLog.w("dSIM_SyncService", "publish failed: ${e.message}", e)
                 false
             }
         }
@@ -184,7 +183,7 @@ class MqttSyncService : Service() {
             }
             true
         } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "startForeground rejected: ${e.javaClass.simpleName}: ${e.message}")
+            DsimLog.e("dSIM_SyncService", "startForeground rejected: ${e.javaClass.simpleName}: ${e.message}")
             false
         }
     }
@@ -219,7 +218,7 @@ class MqttSyncService : Service() {
             override fun onAvailable(network: Network) {
                 if (globalMqttClient?.isConnected == true) return
                 if (!reconnectAllowed()) return
-                Log.d("dSIM_SyncService", "network available -> reconnect now")
+                DsimLog.d("dSIM_SyncService", "network available -> reconnect now")
                 reconnectAttempts = 0
                 scheduleReconnect("network", immediate = true)
             }
@@ -228,7 +227,7 @@ class MqttSyncService : Service() {
             cm.registerDefaultNetworkCallback(callback)
             networkCallback = callback
         } catch (e: Exception) {
-            Log.w("dSIM_SyncService", "registerDefaultNetworkCallback failed; backoff timer only", e)
+            DsimLog.w("dSIM_SyncService", "registerDefaultNetworkCallback failed; backoff timer only", e)
         }
     }
 
@@ -238,7 +237,7 @@ class MqttSyncService : Service() {
         try {
             (getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.unregisterNetworkCallback(cb)
         } catch (e: Exception) {
-            Log.d("dSIM_SyncService", "unregisterNetworkCallback: ${e.message}")
+            DsimLog.d("dSIM_SyncService", "unregisterNetworkCallback: ${e.message}")
         }
     }
 
@@ -258,7 +257,7 @@ class MqttSyncService : Service() {
         reconnectJob?.cancel()
         val attempt = reconnectAttempts + 1
         val delayMs = if (immediate) 0L else ReconnectPolicy.delayForAttempt(attempt)
-        Log.d("dSIM_SyncService", "reconnect scheduled reason=$reason attempt=$attempt in ${delayMs}ms")
+        DsimLog.d("dSIM_SyncService", "reconnect scheduled reason=$reason attempt=$attempt in ${delayMs}ms")
         reconnectJob = serviceScope.launch {
             delay(delayMs)
             if (globalMqttClient?.isConnected == true || !reconnectAllowed()) return@launch
@@ -413,7 +412,7 @@ class MqttSyncService : Service() {
         // Keep the IO scope alive just long enough to retire its captured client, then cancel it.
         enqueueClientTeardown(cancelScopeAfter = true)
         serviceAlive = false
-        Log.d("dSIM_SyncService", "同步服务已关闭，客户端清理已提交")
+        DsimLog.d("dSIM_SyncService", "同步服务已关闭，客户端清理已提交")
     }
 
     private fun enqueueClientTeardown(cancelScopeAfter: Boolean = false) {
@@ -436,7 +435,7 @@ class MqttSyncService : Service() {
                             try {
                                 retired.disconnectForcibly(1_000L, 1_000L)
                             } catch (e: Exception) {
-                                Log.d("dSIM_SyncService", "client disconnect: ${e.message}")
+                                DsimLog.d("dSIM_SyncService", "client disconnect: ${e.message}")
                             } finally {
                                 retired.close(true)
                             }
@@ -446,7 +445,7 @@ class MqttSyncService : Service() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w("dSIM_SyncService", "client teardown failed", e)
+                DsimLog.w("dSIM_SyncService", "client teardown failed", e)
             } finally {
                 if (cancelScopeAfter) serviceScope.cancel()
             }
@@ -473,12 +472,12 @@ class MqttSyncService : Service() {
                 updateNotification("云端状态：已连接，守护进程常驻中")
             }
             if (result.sent > 0 || result.failed > 0) {
-                Log.d("dSIM_SyncService", "outbox[$trigger] sent=${result.sent} failed=${result.failed} remaining=${result.remaining}")
+                DsimLog.d("dSIM_SyncService", "outbox[$trigger] sent=${result.sent} failed=${result.failed} remaining=${result.remaining}")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("dSIM_SyncService", "outbox flush failed ($trigger)", e)
+            DsimLog.w("dSIM_SyncService", "outbox flush failed ($trigger)", e)
         }
     }
 
@@ -505,7 +504,7 @@ class MqttSyncService : Service() {
                     // Only publishes when something peers render changed, or every MAX_SILENCE_MS.
                     publisher.publishDeviceSnapshot(force = false)
                 } catch (e: Exception) {
-                    Log.e("dSIM_SyncService", "定时广播设备快照失败", e)
+                    DsimLog.e("dSIM_SyncService", "定时广播设备快照失败", e)
                 }
             }
         }
@@ -548,12 +547,12 @@ class MqttSyncService : Service() {
                     stale.setCallback(null)
                     if (stale.isConnected) stale.disconnectForcibly(1_000L) else runCatching { stale.disconnectForcibly(0L) }
                 } catch (e: Exception) {
-                    Log.d("dSIM_SyncService", "stale client disconnect: ${e.message}")
+                    DsimLog.d("dSIM_SyncService", "stale client disconnect: ${e.message}")
                 }
                 try {
                     stale.close(true)
                 } catch (e: Exception) {
-                    Log.d("dSIM_SyncService", "stale client close: ${e.message}")
+                    DsimLog.d("dSIM_SyncService", "stale client close: ${e.message}")
                 }
             }
 
@@ -593,7 +592,7 @@ class MqttSyncService : Service() {
             client.setCallback(object : MqttCallbackExtended {
                 override fun connectionLost(cause: Throwable?) {
                     if (destroying || globalMqttClient !== client) return // superseded client; ignore
-                    Log.w("dSIM_SyncService", "connection lost: ${cause?.message}")
+                    DsimLog.w("dSIM_SyncService", "connection lost: ${cause?.message}")
                     connectionStateFlow.value = false
                     stopSnapshotHeartbeat()
                     scheduleReconnect("connectionLost")
@@ -621,7 +620,7 @@ class MqttSyncService : Service() {
                                 publisher.publishDeviceSnapshot(force = true)
                             }
                         } catch (e: Exception) {
-                            Log.e("dSIM_SyncService", "重连订阅失败", e)
+                            DsimLog.e("dSIM_SyncService", "重连订阅失败", e)
                         }
                     }
                 }
@@ -651,7 +650,7 @@ class MqttSyncService : Service() {
                 return@withLock
             }
             client.subscribe(subscribeFilter, 1)
-            Log.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic" +
+            DsimLog.d("dSIM_SyncService", "subscribed $subscribeFilter, publishing on $publishTopic" +
                 if (reconnectAttempts > 0) " (after $reconnectAttempts failed attempts)" else "")
 
             reconnectAttempts = 0
@@ -671,7 +670,7 @@ class MqttSyncService : Service() {
             if (destroying || manualDisconnectInCurrentSession) return@withLock
             connectionStateFlow.value = false
             reconnectAttempts += 1
-            Log.e("dSIM_SyncService", "连接失败 (attempt $reconnectAttempts)", e)
+            DsimLog.e("dSIM_SyncService", "连接失败 (attempt $reconnectAttempts)", e)
             if (reconnectAllowed()) {
                 val next = ReconnectPolicy.delayForAttempt(reconnectAttempts + 1) / 1000
                 updateNotification("云端状态：连接失败，${next} 秒后自动重试")

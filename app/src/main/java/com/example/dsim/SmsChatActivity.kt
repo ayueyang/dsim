@@ -458,7 +458,7 @@ class SmsChatActivity : AppCompatActivity() {
                     DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
                         .updateMessageStatus(it, -1, e.message)
                 }
-                android.util.Log.e("dSIM_Chat", "发送异常", e)
+                DsimLog.e("dSIM_Chat", "发送异常", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@SmsChatActivity, "发送失败: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -512,7 +512,7 @@ class SmsChatActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
                     .updateMessageStatus(sms.uuid, -1, e.message)
-                android.util.Log.e("dSIM_Chat", "重试发送异常", e)
+                DsimLog.e("dSIM_Chat", "重试发送异常", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@SmsChatActivity, "重试失败: ${e.message}", Toast.LENGTH_LONG).show()
                 }

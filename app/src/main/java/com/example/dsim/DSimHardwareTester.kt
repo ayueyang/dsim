@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
-import android.util.Log
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,7 +33,7 @@ object DSimHardwareTester {
             val result = reader.readLine()
             result == "root_ok"
         } catch (e: Exception) {
-            Log.e(TAG, "Root 请求异常: ${e.message}")
+            DsimLog.e(TAG, "Root 请求异常: ${e.message}")
             false
         }
     }
@@ -63,7 +62,7 @@ object DSimHardwareTester {
 
         report.append("================ 探测结束 ================")
         val finalReport = report.toString()
-        Log.d(TAG, finalReport) // 同时打印到 Logcat
+        DsimLog.d(TAG, finalReport) // 同时打印到 Logcat
         
         return@withContext finalReport
     }

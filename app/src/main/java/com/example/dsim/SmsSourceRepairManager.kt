@@ -1,7 +1,6 @@
 package com.example.dsim
 
 import android.content.Context
-import android.util.Log
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SimCardConfig
 
@@ -60,11 +59,11 @@ object SmsSourceRepairManager {
             }
 
             if (repairedCount > 0) {
-                Log.w("dSIM_SourceRepair", "Repaired $repairedCount borrowed app-db message mappings")
+                DsimLog.w("dSIM_SourceRepair", "Repaired $repairedCount borrowed app-db message mappings")
             }
             repairedCount
         } catch (e: Exception) {
-            Log.e("dSIM_SourceRepair", "Failed to repair borrowed mappings", e)
+            DsimLog.e("dSIM_SourceRepair", "Failed to repair borrowed mappings", e)
             0
         }
     }

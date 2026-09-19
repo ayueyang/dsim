@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
-import android.util.Log
 import androidx.room.withTransaction
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SendCommandRecord
@@ -56,7 +55,7 @@ object OutgoingSmsDispatcher {
                 }
                 publishOutcome(context, result)
             } else {
-                Log.w(TAG, "Rejected conflicting command UUID")
+                DsimLog.w(TAG, "Rejected conflicting command UUID")
             }
             return
         }
@@ -72,7 +71,7 @@ object OutgoingSmsDispatcher {
         if (limit > SendCostPolicy.UNLIMITED) {
             val today = dao.sumSendSegmentsSince(SendCostPolicy.startOfDay(System.currentTimeMillis()))
             if (SendCostPolicy.isOverLimit(today, parts.size, limit)) {
-                Log.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${parts.size})")
+                DsimLog.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${parts.size})")
                 throw SendCommandRejectedException(SendCostPolicy.overLimitMessage(limit))
             }
         }
@@ -131,7 +130,7 @@ object OutgoingSmsDispatcher {
                     dao.updateMessageStatus(uuid, -2, it.errorMsg)
                 }
             }
-            Log.w(TAG, "SMS submission needs confirmation", e)
+            DsimLog.w(TAG, "SMS submission needs confirmation", e)
             publishOutcome(context, outcome)
         }
     }

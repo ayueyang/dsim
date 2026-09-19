@@ -390,14 +390,14 @@ class MainActivity : AppCompatActivity() {
             val prefs = getSharedPreferences(SYNC_PREFS_NAME, Context.MODE_PRIVATE)
             val lastWatermark = prefs.getLong(KEY_HIGH_WATERMARK, 0L)
             
-            android.util.Log.d("dSIM_SyncBug", "开始同步: isIncremental=$isIncremental, watermark=$lastWatermark")
+            DsimLog.d("dSIM_SyncBug", "开始同步: isIncremental=$isIncremental, watermark=$lastWatermark")
 
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val dao = DsimDatabase.getDatabase(this@MainActivity).dsimDao()
                     val configs = dao.getAllSimConfigs()
                     
-                    android.util.Log.d("dSIM_SyncBug", "SIM配置数量: ${configs.size}")
+                    DsimLog.d("dSIM_SyncBug", "SIM配置数量: ${configs.size}")
                     
                     val messagesToSync = if (isIncremental) {
                         dao.getMessagesAfterWatermark(lastWatermark)
@@ -405,7 +405,7 @@ class MainActivity : AppCompatActivity() {
                         dao.getAllSmsMessagesAsc()
                     }
                     
-                    android.util.Log.d("dSIM_SyncBug", "查询到短信数量: ${messagesToSync.size}")
+                    DsimLog.d("dSIM_SyncBug", "查询到短信数量: ${messagesToSync.size}")
 
                     if (messagesToSync.isEmpty()) {
                         withContext(Dispatchers.Main) {
@@ -442,13 +442,13 @@ class MainActivity : AppCompatActivity() {
                                 if (msg.timestamp > newWatermark) {
                                     newWatermark = msg.timestamp
                                 }
-                                android.util.Log.d("dSIM_SyncBug", "[$index] 发送成功: ${msg.address}")
+                                DsimLog.d("dSIM_SyncBug", "[$index] 发送成功: ${DsimLog.maskNumber(msg.address)}")
                             } else {
-                                android.util.Log.e("dSIM_SyncBug", "[$index] 发布失败（未连接/频道不符/加密失败）: ${msg.address}")
+                                DsimLog.e("dSIM_SyncBug", "[$index] 发布失败（未连接/频道不符/加密失败）: ${DsimLog.maskNumber(msg.address)}")
                             }
                             kotlinx.coroutines.delay(50)
                         } catch (e: Exception) {
-                            android.util.Log.e("dSIM_SyncBug", "[$index] 单条发送异常: ${e.message}", e)
+                            DsimLog.e("dSIM_SyncBug", "[$index] 单条发送异常: ${e.message}", e)
                         }
                     }
                     
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity() {
                         tvReport.append("\n✅ 发射完毕！成功发送 $successCount 条，水位线已推高。")
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("dSIM_SyncBug", "历史同步发生致命异常", e)
+                    DsimLog.e("dSIM_SyncBug", "历史同步发生致命异常", e)
                     withContext(Dispatchers.Main) {
                         tvReport.append("\n❌ 历史同步崩溃: ${e.stackTraceToString().take(300)}")
                     }

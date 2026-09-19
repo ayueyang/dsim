@@ -3,7 +3,6 @@ package com.example.dsim
 import android.content.ContentValues
 import android.content.Context
 import android.provider.Telephony
-import android.util.Log
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +26,7 @@ object SmsDatabaseTester {
                 put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
             }
 
-            Log.d(TAG, "Insert fake sms into system inbox: from=$sender")
+            DsimLog.d(TAG, "Insert fake sms into system inbox: from=${DsimLog.maskNumber(sender)}")
             val newUri = context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
             return@withContext if (newUri != null) {
                 "存入收件箱成功: $sender"
@@ -35,7 +34,7 @@ object SmsDatabaseTester {
                 "存入失败"
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Insert fake sms failed", e)
+            DsimLog.e(TAG, "Insert fake sms failed", e)
             return@withContext "写入异常: ${e.message}"
         }
     }

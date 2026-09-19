@@ -1,7 +1,6 @@
 package com.example.dsim
 
 import android.util.Base64
-import android.util.Log
 import androidx.annotation.WorkerThread
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -88,7 +87,7 @@ object DsimCryptoUtils {
         return try {
             Base64.encodeToString(seal(plaintext.toByteArray(Charsets.UTF_8), secret), Base64.NO_WRAP)
         } catch (e: Exception) {
-            Log.e(TAG, "encrypt failed", e)
+            DsimLog.e(TAG, "encrypt failed", e)
             null
         }
     }
@@ -103,7 +102,7 @@ object DsimCryptoUtils {
         val combined = try {
             Base64.decode(ciphertextBase64, Base64.NO_WRAP)
         } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "decrypt: invalid base64")
+            DsimLog.w(TAG, "decrypt: invalid base64")
             return null
         }
         return open(combined, secret)?.let { String(it, Charsets.UTF_8) }
@@ -147,7 +146,7 @@ object DsimCryptoUtils {
         } catch (e: Exception) {
             // Wrong password or tampered payload both surface as AEADBadTagException; keep it quiet
             // but visible: one line, no stack, so a hostile broker cannot flood the log.
-            Log.w(TAG, "decrypt failed: ${e.javaClass.simpleName}")
+            DsimLog.w(TAG, "decrypt failed: ${e.javaClass.simpleName}")
             null
         }
     }

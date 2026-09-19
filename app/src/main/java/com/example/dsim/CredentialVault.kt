@@ -3,7 +3,6 @@ package com.example.dsim
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import android.util.Log
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -51,7 +50,7 @@ object CredentialVault {
             val ct = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
             CredentialCodec.frame(cipher.iv, ct) { Base64.encodeToString(it, Base64.NO_WRAP) }
         } catch (e: Exception) {
-            Log.e(TAG, "seal failed: ${e.javaClass.simpleName}: ${e.message}")
+            DsimLog.e(TAG, "seal failed: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
@@ -65,7 +64,7 @@ object CredentialVault {
             cipher.init(Cipher.DECRYPT_MODE, k, GCMParameterSpec(TAG_BITS, parts.iv))
             String(cipher.doFinal(parts.ciphertext), Charsets.UTF_8)
         } catch (e: Exception) {
-            Log.e(TAG, "open failed (key lost or blob corrupt): ${e.javaClass.simpleName}")
+            DsimLog.e(TAG, "open failed (key lost or blob corrupt): ${e.javaClass.simpleName}")
             null
         }
     }
