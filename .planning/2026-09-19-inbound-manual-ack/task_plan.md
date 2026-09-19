@@ -45,4 +45,4 @@ ack already went out. Second defect: `handleIncomingMessage` has a bare `catch (
 - [x] S4 build
 - [x] S5 emulator burst B + smoke
 - [x] S6 docs
-- [ ] S7 commit
+- [x] S7 commit -> c561a6e

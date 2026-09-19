@@ -38,3 +38,5 @@
 HANDOVER §5 item 7/8, arch doc §9.1 table refreshed (was stale: still said MemoryPersistence / cleanSession=true) + §9.3 note.
 
 ## S7 commit below.
+
+Commit c561a6e (12 files, +462/-17). Not pushed. HANDOVER_2026-09-18.md (previously untracked) is now tracked in this commit.
