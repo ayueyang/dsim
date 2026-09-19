@@ -12,6 +12,10 @@ import java.security.MessageDigest
  *     explicitly, so the intent is visible in the code and not only in this regex.
  *  2. Debug level is a no-op outside debug builds, so release logcat carries warnings and errors
  *     only (the T4.1 R8 rules will strip the debug call sites as well).
+ *  3. [redact] is deliberately blunt (F-5): **every** digit run of 7+ digits is masked, not just
+ *     phone numbers — ICCID and subscriptionId get masked as well (desirable, they are hardware
+ *     identifiers). Side effect: when debugging SIM/subscription problems the raw values never
+ *     appear in logcat; log [fingerprint] instead and correlate occurrences by hash.
  *
  * Decrypted payloads are never logged. [MqttInboundHandler] logs action / length / [fingerprint]
  * instead of plaintext, because a decrypted group message contains SMS bodies and numbers.
