@@ -5,7 +5,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.util.Log
@@ -14,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.util.UUID
 import java.util.regex.Pattern
 
 /**
@@ -50,7 +48,7 @@ object DSimHardwareTester {
 
         // 1. 测试设备唯一标识
         report.append("【阶段一：设备标识提取】\n")
-        val deviceId = getDeviceId(context)
+        val deviceId = HardwareProbeUtils.getDeviceId(context)
         report.append("获取结果: $deviceId\n\n")
 
         // 2. 测试官方 API 获取 SIM 卡 (SubId)
@@ -68,19 +66,6 @@ object DSimHardwareTester {
         Log.d(TAG, finalReport) // 同时打印到 Logcat
         
         return@withContext finalReport
-    }
-
-    private fun getDeviceId(context: Context): String {
-        return try {
-            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            if (androidId.isNullOrBlank() || androidId.lowercase() == "9774d56d682e549c") {
-                "Android_ID无效，生成备用 UUID: ${UUID.randomUUID()}"
-            } else {
-                "Android_ID: $androidId"
-            }
-        } catch (e: Exception) {
-            "获取失败: ${e.message}"
-        }
     }
 
     @SuppressLint("MissingPermission")

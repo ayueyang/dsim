@@ -3,12 +3,12 @@ package com.example.dsim
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
-import android.provider.Settings
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.example.dsim.database.SimCardConfig
+import java.util.UUID
 
 data class SimHardwareData(
     val mappingKey: String,
@@ -24,9 +24,40 @@ object HardwareProbeUtils {
 
     var isMockNoRootMode: Boolean = false
 
+    private const val IDENTITY_PREFS = "dSIM_IDENTITY"
+    private const val KEY_DEVICE_ID = "DEVICE_ID"
+
+    /** Process-level cache: one prefs read per process instead of one per call site. */
+    @Volatile
+    private var cachedDeviceId: String? = null
+
+    /**
+     * Application-managed device identity (W2 / T1.3): a random UUID generated on first launch and
+     * kept in its own prefs file, so the identity does not depend on the signing key.
+     * `Settings.Secure.ANDROID_ID` is scoped per (user, package, signing key), which made debug and
+     * release builds of the same device disagree and drifted `sms_messages.deviceId`,
+     * `DeviceProfile.isLocalDevice` and every `DEV_<id>` mappingKey.
+     *
+     * The identity is per install: uninstalling loses it. There is deliberately **no** ANDROID_ID →
+     * UUID migration (no released users; recorded in FIXES_2026-09-19.md T1.3).
+     */
     fun getDeviceId(context: Context): String {
-        return Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            ?: "UNKNOWN_DEVICE"
+        cachedDeviceId?.let { return it }
+        return synchronized(this) {
+            cachedDeviceId ?: readOrCreateDeviceId(context.applicationContext).also { cachedDeviceId = it }
+        }
+    }
+
+    private fun readOrCreateDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences(IDENTITY_PREFS, Context.MODE_PRIVATE)
+        prefs.getString(KEY_DEVICE_ID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        val generated = UUID.randomUUID().toString().replace("-", "")
+        // commit(), not apply(): the identity must be on disk before this process can die, otherwise
+        // the next process would mint a second id and split this device's history.
+        if (!prefs.edit().putString(KEY_DEVICE_ID, generated).commit()) {
+            Log.w(TAG, "identity prefs commit failed; deviceId may change on next launch")
+        }
+        return generated
     }
 
     fun buildNoRootMappingKey(deviceId: String, subscriptionId: Int?, slotIndex: Int): String {
