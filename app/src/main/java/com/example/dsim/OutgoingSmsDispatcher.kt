@@ -28,7 +28,7 @@ object OutgoingSmsDispatcher {
         requesterDeviceId: String, config: SimCardConfig,
         cloudConfig: CloudSettingsManager.CloudConfig
     ) {
-        require(uuid.isNotBlank() && target.isNotBlank() && body.isNotBlank() && requesterDeviceId.isNotBlank())
+        requireSendCommand(uuid.isNotBlank() && target.isNotBlank() && body.isNotBlank() && requesterDeviceId.isNotBlank())
         val database = DsimDatabase.getDatabase(context)
         val dao = database.dsimDao()
         val group = groupFingerprint(cloudConfig)
@@ -60,20 +60,20 @@ object OutgoingSmsDispatcher {
             }
             return
         }
-        require(config.isActive && config.bindMode != "REMOTE_SHADOW") { "目标发送卡不可用" }
+        requireSendCommand(config.isActive && config.bindMode != "REMOTE_SHADOW") { "目标发送卡不可用" }
         val subscription = HardwareProbeUtils.resolveSubscriptionId(context, config)
         val localCount = dao.getActiveSimConfigs().count { it.bindMode != "REMOTE_SHADOW" }
-        require(subscription != null || localCount <= 1) { "无法定位指定 SIM 卡，已取消发送" }
+        requireSendCommand(subscription != null || localCount <= 1) { "无法定位指定 SIM 卡，已取消发送" }
         val manager = smsManager(context, subscription)
         val parts = manager.divideMessage(body)
-        require(parts.isNotEmpty()) { "短信内容为空" }
+        requireSendCommand(parts.isNotEmpty()) { "短信内容为空" }
         // Cost guard: a new command only. Re-queries of an existing UUID returned above and are free.
         val limit = CloudSettingsManager.getRemoteSendDailyLimit(context)
         if (limit > SendCostPolicy.UNLIMITED) {
             val today = dao.sumSendSegmentsSince(SendCostPolicy.startOfDay(System.currentTimeMillis()))
             if (SendCostPolicy.isOverLimit(today, parts.size, limit)) {
                 Log.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${parts.size})")
-                throw IllegalStateException(SendCostPolicy.overLimitMessage(limit))
+                throw SendCommandRejectedException(SendCostPolicy.overLimitMessage(limit))
             }
         }
         val record = SendCommandRecord(
@@ -100,7 +100,7 @@ object OutgoingSmsDispatcher {
                 val sms = dao.getMessageByUuid(uuid)
                 if (sms == null) dao.insertMessage(toSms(record))
                 else {
-                    require(sms.type == 2 && sms.address == target && sms.body == body &&
+                    requireSendCommand(sms.type == 2 && sms.address == target && sms.body == body &&
                         sms.mappingKey == config.mappingKey) { "短信 UUID 内容冲突" }
                     dao.updateSentMessageAfterSend(uuid, record.createdAt, 0,
                         record.deviceId, subscription ?: -1, null, config.mappingKey, null)

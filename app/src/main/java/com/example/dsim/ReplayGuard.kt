@@ -28,12 +28,12 @@ class ReplayGuard(
         data class Reject(val reason: Reason, val detail: String) : Verdict
     }
 
-    /** Capacity-bounded nonce cache. Durable messages must not lose deduplication with age. */
+    /** Capacity-bounded cache ordered by consumption; freshness checks never mutate it. */
     private val seen = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean = size > capacity
     }
 
-    fun check(senderId: String, ts: Long?, nonce: String?, nowMs: Long, policy: Policy): Verdict {
+    fun checkFreshness(senderId: String, ts: Long?, nonce: String?, nowMs: Long, policy: Policy): Verdict {
         if (ts == null || ts <= 0L || nonce.isNullOrBlank()) {
             return Verdict.Reject(Reason.MISSING, "no ts/nonce")
         }
@@ -43,11 +43,16 @@ class ReplayGuard(
             return Verdict.Reject(Reason.STALE, "skew=${skew}ms window=${windowMs}ms")
         }
         val key = "$senderId|$nonce"
-        if (seen[key] != null) {
+        if (seen.containsKey(key)) {
             return Verdict.Reject(Reason.DUPLICATE, "nonce seen")
         }
-        seen[key] = ts
         return Verdict.Accept
+    }
+
+    /** Call only after successful processing, under the same serialization as checkFreshness. */
+    fun markConsumed(senderId: String, ts: Long, nonce: String) {
+        require(ts > 0L && nonce.isNotBlank())
+        seen["$senderId|$nonce"] = ts
     }
 
     val size: Int get() = seen.size

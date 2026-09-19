@@ -18,7 +18,7 @@ internal class MqttInboundHandler(
     private val session: CloudSession,
     private val publisher: MqttPublisher
 ) {
-    private val replayGuard = ReplayGuard()
+    private val commitGate = InboundCommitGate()
     private val lastRejectLogAt = java.util.EnumMap<ReplayGuard.Reason, Long>(ReplayGuard.Reason::class.java)
 
     /** One WARN per reason per minute; a replay flood must not turn into a log flood. */
@@ -34,153 +34,156 @@ internal class MqttInboundHandler(
         )
     }
 
-    suspend fun handleIncomingMessage(encryptedBase64: String, senderFromTopic: String?) {
-        if (!UsageModeManager.canUseCloud(context)) return
-
+    suspend fun handleIncomingMessage(encryptedBase64: String, senderFromTopic: String?): InboundOutcome {
         try {
+            if (!UsageModeManager.canUseCloud(context)) return InboundOutcome.PermanentlyRejected
             val decryptedJson = DsimCryptoUtils.decryptMessage(encryptedBase64, session.password)
-                ?: return
-
+            if (decryptedJson == null) {
+                Log.w("dSIM_SyncService", "拒绝无法解密的云端消息")
+                return InboundOutcome.PermanentlyRejected
+            }
             val envelope = MqttPayloadCodec.decodeEnvelope(decryptedJson)
             if (envelope == null) {
                 Log.w("dSIM_SyncService", "忽略无法识别的云端消息: ${decryptedJson.take(200)}")
-                return
+                return InboundOutcome.PermanentlyRejected
             }
-            val inbound = envelope.inbound
-            val senderId = MqttPayloadCodec.senderId(inbound).ifBlank { senderFromTopic.orEmpty() }
-            // Durable UUID-idempotent deliveries can be queued offline longer than a short TTL.
-            // SEND_CMD still expires after 10 minutes; MQTT dup never bypasses the guard.
-            val policy = ReplayGuard.Policy.forMessage(inbound)
-            val verdict = synchronized(replayGuard) {
-                replayGuard.check(senderId, envelope.ts, envelope.nonce, System.currentTimeMillis(), policy)
+            val senderId = MqttPayloadCodec.senderId(envelope.inbound).ifBlank { senderFromTopic.orEmpty() }
+            return commitGate.process(envelope, senderId,
+                onRejected = { logReplayReject(it, envelope.inbound, senderId) }) {
+                processDecoded(envelope.inbound, decryptedJson, senderId)
             }
-            if (verdict is ReplayGuard.Verdict.Reject) {
-                logReplayReject(verdict, inbound, senderId)
-                return
-            }
-            val localDeviceId = HardwareProbeUtils.getDeviceId(context)
-            // Defence in depth: the topic-level echo filter runs before decrypt, but a payload whose
-            // deviceId claims to be us (replay onto a foreign sub-topic) must still be ignored.
-            // SEND_CMD / SEND_CMD_RESULT are exempt: their deviceId is the requester / executor, and
-            // a device may legitimately be both ends when it owns the SIM it asked for.
-            if (senderId == localDeviceId && inbound !is SendCmd && inbound !is SendCmdResult) return
+        } catch (e: CancellationException) {
+            // Cancellation never acknowledges or consumes the nonce.
+            throw e
+        } catch (e: Exception) {
+            val outcome = InboundOutcome.fromFailure(e)
+            Log.e("dSIM_SyncService", "处理云端消息失败: $outcome", e)
+            return outcome
+        }
+    }
 
-            val payload: SyncPayload = when (inbound) {
-                is Offline -> {
-                    if (senderId.isNotBlank() && senderId != localDeviceId) {
-                        Log.d("dSIM_SyncService", "peer OFFLINE: $senderId")
-                        DeviceDirectoryManager.markOffline(context, senderId)
-                        HistoryQueueNotificationHelper.refresh(context)
-                    }
-                    return
-                }
-                is HistorySyncAckMsg -> {
-                    handleHistorySyncAck(inbound, localDeviceId)
-                    return
-                }
-                is HistoryQueueBatch -> {
-                    handleHistoryQueueBatch(inbound)
-                    return
-                }
-                is Ping -> {
-                    // A peer explicitly asked; answer even if nothing changed.
-                    if (senderId != localDeviceId) publisher.publishDeviceSnapshot(force = true)
-                    return
-                }
-                is Pong -> {
-                    if (senderId != localDeviceId) {
-                        DeviceDirectoryManager.saveRemoteSnapshot(context, inbound)
-                        HistoryQueueNotificationHelper.refresh(context)
-                        syncRemoteSimsFromPong(inbound)
-                        HistorySyncQueueManager.evaluateAndMaybeStartLocal(context)
-                        MqttSyncService.radarEventFlow.emit(decryptedJson)
-                    }
-                    return
-                }
-                is SendCmdResult -> {
-                    handleSendCommandResult(inbound, localDeviceId)
-                    return
-                }
-                is SendCmd -> {
-                    handleSendCommand(inbound)
-                    return
-                }
-                is SmsSync -> inbound.payload
-            }
+    private suspend fun processDecoded(
+        inbound: MqttInbound,
+        decryptedJson: String,
+        senderId: String
+    ): InboundOutcome {
+        val localDeviceId = HardwareProbeUtils.getDeviceId(context)
+        // Defence in depth: the topic-level echo filter runs before decrypt, but a payload whose
+        // deviceId claims to be us (replay onto a foreign sub-topic) must still be ignored.
+        // SEND_CMD / SEND_CMD_RESULT are exempt: their deviceId is the requester / executor, and
+        // a device may legitimately be both ends when it owns the SIM it asked for.
+        if (senderId == localDeviceId && inbound !is SendCmd && inbound !is SendCmdResult) return InboundOutcome.PermanentlyRejected
 
-            val sms = payload.sms
-            if (sms.deviceId == localDeviceId) {
-                return
-            }
-
-            if (!UsageModeManager.canReceiveCloudSms(context)) {
-                if (payload.historyImport) {
-                    publisher.publishHistorySyncAck(
-                        uuid = sms.uuid,
-                        targetDeviceId = sms.deviceId,
-                        success = true,
-                        message = "ignored_by_mode"
-                    )
+        val payload: SyncPayload = when (inbound) {
+            is Offline -> {
+                if (senderId.isNotBlank() && senderId != localDeviceId) {
+                    Log.d("dSIM_SyncService", "peer OFFLINE: $senderId")
+                    DeviceDirectoryManager.markOffline(context, senderId)
+                    HistoryQueueNotificationHelper.refresh(context)
                 }
-                return
+                return InboundOutcome.Committed
             }
-
-            val dao = DsimDatabase.getDatabase(context).dsimDao()
-            if (dao.checkUuidExists(sms.uuid) > 0) {
-                dao.updateMessageStatus(sms.uuid, sms.status, sms.errorMsg)
-                if (payload.historyImport) {
-                    publisher.publishHistorySyncAck(
-                        uuid = sms.uuid,
-                        targetDeviceId = sms.deviceId,
-                        success = true,
-                        message = "already_exists"
-                    )
+            is HistorySyncAckMsg -> {
+                handleHistorySyncAck(inbound, localDeviceId)
+                return InboundOutcome.Committed
+            }
+            is HistoryQueueBatch -> {
+                handleHistoryQueueBatch(inbound)
+                return InboundOutcome.Committed
+            }
+            is Ping -> {
+                // A peer explicitly asked; answer even if nothing changed.
+                if (senderId != localDeviceId) publisher.publishDeviceSnapshot(force = true)
+                return InboundOutcome.Committed
+            }
+            is Pong -> {
+                if (senderId != localDeviceId) {
+                    DeviceDirectoryManager.saveRemoteSnapshot(context, inbound)
+                    HistoryQueueNotificationHelper.refresh(context)
+                    syncRemoteSimsFromPong(inbound)
+                    HistorySyncQueueManager.evaluateAndMaybeStartLocal(context)
+                    MqttSyncService.radarEventFlow.emit(decryptedJson)
                 }
-                return
+                return InboundOutcome.Committed
             }
-
-            val existingConfig = dao.getSimConfigByKey(sms.mappingKey)
-            if (existingConfig == null || existingConfig.bindMode == "REMOTE_SHADOW") {
-                val sourcePhone = payload.remarkPhone.trim()
-                PrivacyModeManager.rememberOwnPhone(context, sourcePhone)
-                dao.saveSimConfig(
-                    buildRemoteShadowConfig(
-                        mappingKey = sms.mappingKey,
-                        phoneNumber = sourcePhone,
-                        alias = payload.deviceName,
-                        remoteDeviceId = sms.deviceId,
-                        subscriptionId = HardwareProbeUtils.parseSubscriptionIdFromMappingKey(sms.mappingKey),
-                        slotIndex = HardwareProbeUtils.parseSlotIndexFromMappingKey(sms.mappingKey),
-                        existingConfig = existingConfig,
-                        isActive = sourcePhone.isNotBlank() || existingConfig?.isActive == true
-                    )
-                )
+            is SendCmdResult -> {
+                handleSendCommandResult(inbound, localDeviceId)
+                return InboundOutcome.Committed
             }
+            is SendCmd -> {
+                handleSendCommand(inbound)
+                return InboundOutcome.Committed
+            }
+            is SmsSync -> inbound.payload
+        }
 
-            val safeSms = sms.copy(id = 0L)
-            dao.insertMessage(safeSms)
+        val sms = payload.sms
+        if (sms.deviceId == localDeviceId) {
+            return InboundOutcome.Committed
+        }
+
+        if (!UsageModeManager.canReceiveCloudSms(context)) {
             if (payload.historyImport) {
                 publisher.publishHistorySyncAck(
                     uuid = sms.uuid,
                     targetDeviceId = sms.deviceId,
                     success = true,
-                    message = null
+                    message = "ignored_by_mode"
                 )
             }
-            if (!payload.silentSync) {
-                NotificationUtils.showNewMessageNotification(
-                    context,
-                    safeSms,
-                    payload.remarkPhone
-                )
-            }
-        } catch (e: CancellationException) {
-            // Must propagate: InboundDispatcher leaves a cancelled delivery unacked so the broker
-            // redelivers it; swallowing it here would ack a message that was never committed.
-            throw e
-        } catch (e: Exception) {
-            Log.e("dSIM_SyncService", "处理云端消息失败", e)
+            return InboundOutcome.Committed
         }
+
+        val dao = DsimDatabase.getDatabase(context).dsimDao()
+        if (dao.checkUuidExists(sms.uuid) > 0) {
+            dao.updateMessageStatus(sms.uuid, sms.status, sms.errorMsg)
+            if (payload.historyImport) {
+                publisher.publishHistorySyncAck(
+                    uuid = sms.uuid,
+                    targetDeviceId = sms.deviceId,
+                    success = true,
+                    message = "already_exists"
+                )
+            }
+            return InboundOutcome.Committed
+        }
+
+        val existingConfig = dao.getSimConfigByKey(sms.mappingKey)
+        if (existingConfig == null || existingConfig.bindMode == "REMOTE_SHADOW") {
+            val sourcePhone = payload.remarkPhone.trim()
+            PrivacyModeManager.rememberOwnPhone(context, sourcePhone)
+            dao.saveSimConfig(
+                buildRemoteShadowConfig(
+                    mappingKey = sms.mappingKey,
+                    phoneNumber = sourcePhone,
+                    alias = payload.deviceName,
+                    remoteDeviceId = sms.deviceId,
+                    subscriptionId = HardwareProbeUtils.parseSubscriptionIdFromMappingKey(sms.mappingKey),
+                    slotIndex = HardwareProbeUtils.parseSlotIndexFromMappingKey(sms.mappingKey),
+                    existingConfig = existingConfig,
+                    isActive = sourcePhone.isNotBlank() || existingConfig?.isActive == true
+                )
+            )
+        }
+
+        val safeSms = sms.copy(id = 0L)
+        dao.insertMessage(safeSms)
+        if (payload.historyImport) {
+            publisher.publishHistorySyncAck(
+                uuid = sms.uuid,
+                targetDeviceId = sms.deviceId,
+                success = true,
+                message = null
+            )
+        }
+        if (!payload.silentSync) {
+            NotificationUtils.showNewMessageNotification(
+                context,
+                safeSms,
+                payload.remarkPhone
+            )
+        }
+        return InboundOutcome.Committed
     }
 
     fun handleHistorySyncAck(ack: HistorySyncAckMsg, localDeviceId: String) {
@@ -256,19 +259,22 @@ internal class MqttInboundHandler(
                 return
             }
         }
-        try {
-            OutgoingSmsDispatcher.submit(context, uuid, target, body, requester, config,
-                session.config())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Dispatcher owns any durable claim. Never overwrite its result here.
-            if (dao.getSendCommand(uuid) == null) {
-                dao.updateMessageStatus(uuid, -1, e.message)
-                publisher.publishSendCommandResult(uuid, requester, false, e.message ?: "发送准备失败")
+        // Only explicit business rejections keep the existing failure-response path. SQLite/IO
+        // and unknown exceptions propagate to the tri-state boundary without acknowledging.
+        prepareSendCommand(
+            submit = {
+                OutgoingSmsDispatcher.submit(context, uuid, target, body, requester, config,
+                    session.config())
+            },
+            onRejected = { e ->
+                // Dispatcher owns any durable claim. Never overwrite its result here.
+                if (dao.getSendCommand(uuid) == null) {
+                    dao.updateMessageStatus(uuid, -1, e.message)
+                    publisher.publishSendCommandResult(uuid, requester, false, e.message ?: "发送准备失败")
+                }
+                Log.e("dSIM_SyncService", "Failed to prepare send command", e)
             }
-            Log.e("dSIM_SyncService", "Failed to prepare send command", e)
-        }
+        )
     }
 
     suspend fun handleSendCommandResult(result: SendCmdResult, localDeviceId: String) {

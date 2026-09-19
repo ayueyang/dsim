@@ -19,22 +19,20 @@ import kotlinx.coroutines.launch
  *
  * Contract (every branch is unit-tested):
  * - own echo (topic suffix == local device): ack immediately, handler never runs;
- * - handler completes normally: ack;
- * - handler throws a non-cancellation exception: log + ack (a poison message must not be
- *   redelivered forever; the handler already logs its own failures);
- * - handler is cancelled (scope torn down in `onDestroy`, process going away): rethrow and do
- *   NOT ack. The broker redelivers to the next session (`dup=1`); `sms_messages.uuid` and the
- *   `send_commands` ledger make redelivery idempotent, and the per-process ReplayGuard starts
- *   empty so the redelivered nonce is accepted.
+ * - Committed / PermanentlyRejected: ack only after processing returns;
+ * - RetryableFailure (including SQLite/IO and unclassified exceptions): no ack; retry in the
+ *   next persistent MQTT session, without consuming a nonce in the service-lifetime guard;
+ * - protocol exceptions: log and ack so poison messages do not loop forever;
+ * - cancellation: rethrow, never ack.
  *
- * Every accepted delivery must eventually be acked or the broker's in-flight window fills and
- * delivery stalls; that is why the exception branch acks.
+ * Infrastructure failures can fill the broker's in-flight window until the next session.
+ * Do not turn them into acknowledgements to make the window look healthy: that loses data.
  */
 internal class InboundDispatcher(
     private val scope: CoroutineScope,
     private val baseTopic: String,
     private val localDeviceId: String,
-    private val handler: suspend (encryptedBase64: String, senderFromTopic: String?) -> Unit,
+    private val handler: suspend (encryptedBase64: String, senderFromTopic: String?) -> InboundOutcome,
     private val ack: (messageId: Int, qos: Int) -> Unit
 ) {
     /** Returns the launched job (null for own echoes) so tests can await / cancel it. */
@@ -47,14 +45,19 @@ internal class InboundDispatcher(
         if (dup) Log.d(TAG, "broker redelivered id=$messageId dup=true on $topic")
         val senderFromTopic = CloudTopics.senderOf(baseTopic, topic)
         return scope.launch {
-            try {
+            val outcome = try {
                 handler(payload, senderFromTopic)
             } catch (e: CancellationException) {
-                // Not acked on purpose: the message must come back in the next session.
                 Log.d(TAG, "inbound id=$messageId cancelled before commit; leaving it unacked for redelivery")
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "inbound id=$messageId handler failed; acking to avoid a redelivery loop", e)
+                InboundOutcome.fromFailure(e).also {
+                    Log.w(TAG, "inbound id=$messageId handler failed: $it", e)
+                }
+            }
+            if (outcome == InboundOutcome.RetryableFailure) {
+                Log.w(TAG, "inbound id=$messageId retryable failure; leaving it unacked for the next session")
+                return@launch
             }
             ensureActive()
             safeAck(messageId, qos)
