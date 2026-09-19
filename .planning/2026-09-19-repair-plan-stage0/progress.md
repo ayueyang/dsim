@@ -1,6 +1,8 @@
 # Progress Log
 
 ## Session: 2026-09-19（本轮审查收尾续作）
+- T0.4首次push被远端新增提交拒绝；fetch发现8cdffee/688645b删除远端旧文档。未强推，merge --no-ff生成931196e并再次push成功：main [origin/main]，rev-list左右=0/0。
+- push后仅FIXES/本账本需追加本证据，随后做一次文档commit并再次push以使远端账本包含ahead0证据；其他planning脏项与用户只读未跟踪项不碰。
 - F4方案已提交9bc6519，仅文档，未实现。API28 sdkmanager尝试失败：Error reading Zip content；system.img=False，仍未验证；可用AVD仅API36系。A无配置/无服务且System UI曾无响应，同进程重连未执行。B网络由F3 finally恢复，当前APK已恢复启动。
 - 收尾前置：删除scripts/__pycache__和F3 detached baseline worktree；保留只读用户未跟踪文件与其他会话planning脏项不动。
 - F6构建（session-704847f9434a24b644c00e22）compileDebugKotlin+cleanTestDebugUnitTest+testDebugUnitTest+assembleDebug+assembleDebugAndroidTest exit0；XML实读tests=109 failures=0 errors=0。一次max_output_bytes=4000截断尾部，后续重复observe返回SESSION_NOT_FOUND（会话完成读取后已释放），因此不声称未捕获的BUILD耗时。仪器测试正在A执行session-48eaf31ce74d4acd873c9425。

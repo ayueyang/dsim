@@ -4,7 +4,7 @@
 按仓库根目录《修复计划_2026-09-19.md》完成阶段 0（T0.1 Base64 API24、T0.2 按消息语义拆分重放窗口、T0.3 三态 ack + 提交后消耗 nonce、T0.4 推送备份），每任务一个独立 conventional commit，全部验收以真实命令输出为准，随后停下等用户批准才进入阶段 1。
 
 ## Next Step
-账本与FIXES已更新；提交本次收尾 docs commit 后执行 `git push origin main`，用 `git branch -vv` 确认 ahead 0。随后停止，等待用户批准 F4 实现及阶段1。
+T0.4首次push遇远端新增提交后已安全merge并push，当前ahead0；追加本次push证据到FIXES/账本，提交后再push一次，最终确认ahead0并停止等待批准。
 
 ## Current Phase
 Phase 6（收尾：文档提交、push、ahead核对后停止）
@@ -43,9 +43,9 @@ Phase 6（收尾：文档提交、push、ahead核对后停止）
 
 ### Phase 6: T0.4 push & stage report
 - [x] FIXES_2026-09-19.md 已补记最终 API/重连偏差（本次收尾 docs commit待提交）
-- [ ] git push origin main + git branch -vv 验证无 ahead（origin 已确认为 https://github.com/ayueyang/dsim.git）
-- [ ] 按任务逐项汇报：文件/关键 diff/命令/真实输出/验收结论/偏差/裁决，然后停下等阶段 1 批准
-- **Status:** in_progress
+- [x] git push origin main；处理远端非快进后merge 931196e，再push成功；branch -vv / rev-list左右均0
+- [x] 账本与FIXES含逐任务文件/diff/命令/输出/验收/偏差/裁决；本轮不进阶段1，等待批准
+- **Status:** complete with deviations; waiting for approval
 
 ## 本轮审查收尾（2026-09-19，续作）
 - [x] F1：HardwareProbeUtils 三处 NewApi SDK 守卫；NewApi 3→0，编译完成，全量 lint 仍5错误
