@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
 class MqttSyncService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var snapshotHeartbeatJob: Job? = null
-    private val connectMutex = Mutex()
+    @Volatile private var destroying = false
     private var reconnectJob: Job? = null
     /** Consecutive failed connect attempts since the last successful subscribe. */
     private var reconnectAttempts = 0
@@ -56,6 +56,10 @@ class MqttSyncService : Service() {
     )
 
     companion object {
+        // The client is process-wide; retirement must also serialize across service recreation.
+        private val connectMutex = Mutex()
+        @Volatile private var clientTeardownJob: Job? = null
+        @Volatile private var serviceAlive = false
         private const val NOTIFICATION_ID = 888
         private const val CHANNEL_ID = "dsim_sync_channel"
         const val ACTION_CONNECT = "com.example.dsim.CONNECT"
@@ -127,10 +131,12 @@ class MqttSyncService : Service() {
         fun isConnected(): Boolean = globalMqttClient?.isConnected == true
 
         /**
-         * True once the service has created a client in this process, connected or not. UI uses
-         * it to decide whether a notification refresh / local-mode switch has anything to act on.
+         * True while the sync daemon can still act: it holds a client (connected, retired or being
+         * disposed) or a service instance is alive in this process. UI uses it to decide whether a
+         * notification refresh / local-mode switch has anything to act on. The client is detached
+         * as soon as a teardown is queued (T1.1), so the service instance is part of the answer.
          */
-        fun hasClient(): Boolean = globalMqttClient != null
+        fun isDaemonActive(): Boolean = globalMqttClient != null || serviceAlive
 
         fun registerHistoryImportAckWaiter(uuid: String): CompletableDeferred<HistorySyncAck> {
             val deferred = CompletableDeferred<HistorySyncAck>()
@@ -177,6 +183,7 @@ class MqttSyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceAlive = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -273,16 +280,7 @@ class MqttSyncService : Service() {
             manualDisconnectInCurrentSession = false
             cancelReconnect()
             stopSnapshotHeartbeat()
-            publisher.publishOfflineBestEffort()
-            try {
-                globalMqttClient?.disconnect()
-                globalMqttClient?.close()
-            } catch (e: Exception) {
-                Log.d("dSIM_SyncService", "client teardown on local mode: ${e.message}")
-            }
-            globalMqttClient = null
-            staticConfig = null
-            connectionStateFlow.value = false
+            enqueueClientTeardown()
             updateNotification(buildLocalModeMessage())
             return START_STICKY
         }
@@ -325,13 +323,7 @@ class MqttSyncService : Service() {
             manualDisconnectInCurrentSession = true
             cancelReconnect()
             stopSnapshotHeartbeat()
-            publisher.publishOfflineBestEffort()
-            try {
-                globalMqttClient?.disconnect()
-            } catch (e: Exception) {
-                Log.e("dSIM_SyncService", "手动断开失败", e)
-            }
-            connectionStateFlow.value = false
+            enqueueClientTeardown()
             updateNotification(buildManualDisconnectMessage())
             return START_STICKY
         }
@@ -405,21 +397,52 @@ class MqttSyncService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        destroying = true
         unregisterNetworkCallback()
-        reconnectJob = null
-        serviceScope.cancel()
+        cancelReconnect()
+        stopSnapshotHeartbeat()
+        // Do not join blocking Paho I/O on the main thread (zero main-thread wait).
+        // Keep the IO scope alive just long enough to retire its captured client, then cancel it.
+        enqueueClientTeardown(cancelScopeAfter = true)
+        serviceAlive = false
+        Log.d("dSIM_SyncService", "同步服务已关闭，客户端清理已提交")
+    }
+
+    private fun enqueueClientTeardown(cancelScopeAfter: Boolean = false) {
+        val retired = globalMqttClient
+        val retiredConfig = staticConfig ?: session.config()
+        val previous = clientTeardownJob
+        // Detach immediately: UI/reconnect cannot mistake a retiring connection for a live one.
+        globalMqttClient = null
         staticConfig = null
         connectionStateFlow.value = false
-        stopSnapshotHeartbeat()
-        publisher.publishOfflineBestEffort()
-        try {
-            globalMqttClient?.disconnect()
-            globalMqttClient?.close()
-            globalMqttClient = null
-        } catch (e: Exception) {
-            Log.d("dSIM_SyncService", "client teardown on destroy: ${e.message}")
+        clientTeardownJob = serviceScope.launch {
+            try {
+                previous?.join()
+                connectMutex.withLock {
+                    if (retired != null) {
+                        try {
+                            retired.setCallback(null)
+                            publisher.publishOfflineBestEffort(retired, retiredConfig)
+                        } finally {
+                            try {
+                                retired.disconnectForcibly(1_000L, 1_000L)
+                            } catch (e: Exception) {
+                                Log.d("dSIM_SyncService", "client disconnect: ${e.message}")
+                            } finally {
+                                retired.close(true)
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("dSIM_SyncService", "client teardown failed", e)
+            } finally {
+                if (cancelScopeAfter) serviceScope.cancel()
+            }
         }
-        Log.d("dSIM_SyncService", "同步服务已关闭")
     }
 
     /**
@@ -485,7 +508,14 @@ class MqttSyncService : Service() {
         snapshotHeartbeatJob = null
     }
 
-    private suspend fun connectAndSubscribe() = connectMutex.withLock {
+    private suspend fun connectAndSubscribe() {
+        // A retired client may still be disposing; same clientId + same persistence dir would race (C12/C20).
+        clientTeardownJob?.join()
+        connectUnderLock()
+    }
+
+    private suspend fun connectUnderLock() = connectMutex.withLock {
+        if (destroying || manualDisconnectInCurrentSession) return@withLock
         if (!UsageModeManager.canUseCloud(this@MqttSyncService)) {
             connectionStateFlow.value = false
             updateNotification(buildLocalModeMessage())
@@ -524,6 +554,7 @@ class MqttSyncService : Service() {
             val client = MqttClient(session.broker, clientId, MqttDefaultFilePersistence(persistenceDir.absolutePath))
             // PUBACK is sent by InboundDispatcher after the handler has committed, not when
             // messageArrived returns (C24). Must be set before connect().
+            client.timeToWait = 15_000L
             client.setManualAcks(true)
             val dispatcher = InboundDispatcher(
                 scope = serviceScope,
@@ -553,7 +584,7 @@ class MqttSyncService : Service() {
 
             client.setCallback(object : MqttCallbackExtended {
                 override fun connectionLost(cause: Throwable?) {
-                    if (globalMqttClient !== client) return // superseded client; ignore
+                    if (destroying || globalMqttClient !== client) return // superseded client; ignore
                     Log.w("dSIM_SyncService", "connection lost: ${cause?.message}")
                     connectionStateFlow.value = false
                     stopSnapshotHeartbeat()
@@ -568,7 +599,7 @@ class MqttSyncService : Service() {
                 }
 
                 override fun connectComplete(reconnect: Boolean, serverURI: String?) {
-                    if (globalMqttClient !== client) return
+                    if (destroying || globalMqttClient !== client) return
                     connectionStateFlow.value = true
                     startSnapshotHeartbeat()
                     if (reconnect) {
@@ -590,6 +621,7 @@ class MqttSyncService : Service() {
                 override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
 
                 override fun messageArrived(topic: String?, message: MqttMessage?) {
+                    if (destroying || globalMqttClient !== client) return
                     val mqttMessage = message ?: return
                     // Own echoes are dropped by topic before decrypt; everything else is acked by
                     // the dispatcher once the handler returns (manual acks, see above).
@@ -598,6 +630,9 @@ class MqttSyncService : Service() {
             })
 
             client.connect(options)
+            // A lifecycle action may detach this client while connect() is blocking. Its queued
+            // teardown owns disposal; never clear a newer service instance's global client here.
+            if (destroying || globalMqttClient !== client) return@withLock
             if (!UsageModeManager.canUseCloud(this@MqttSyncService) ||
                 manualDisconnectInCurrentSession || serviceScope.coroutineContext[Job]?.isActive != true) {
                 client.disconnect()
@@ -625,6 +660,7 @@ class MqttSyncService : Service() {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (destroying || manualDisconnectInCurrentSession) return@withLock
             connectionStateFlow.value = false
             reconnectAttempts += 1
             Log.e("dSIM_SyncService", "连接失败 (attempt $reconnectAttempts)", e)

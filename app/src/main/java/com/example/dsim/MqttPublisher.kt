@@ -217,15 +217,17 @@ internal class MqttPublisher(
     fun buildOfflineJson(deviceId: String): String =
         MqttPayloadCodec.encode(Offline(deviceId = deviceId, timestamp = System.currentTimeMillis()))
 
-    /** Tell peers we are leaving on purpose. Synchronous and short; failures are irrelevant. */
-    fun publishOfflineBestEffort() {
-        val client = client() ?: return
-        if (!client.isConnected || session.topic.isBlank() || session.password.isBlank()) return
+    /** Blocking, bounded by client.timeToWait; only the service IO teardown action calls this.
+     * Use the retired client's immutable config, not the possibly changed live session.
+     */
+    fun publishOfflineBestEffort(client: MqttClient, config: CloudSettingsManager.CloudConfig) {
+        if (!client.isConnected || config.topic.isBlank() || config.password.isBlank()) return
         try {
             val encrypted = DsimCryptoUtils.encryptOrNull(
-                buildOfflineJson(HardwareProbeUtils.getDeviceId(context)), session.password
+                buildOfflineJson(HardwareProbeUtils.getDeviceId(context)), config.password
             ) ?: return
-            client.publish(localPublishTopic(), MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
+            client.publish(CloudTopics.publishTopic(config.topic, HardwareProbeUtils.getDeviceId(context)),
+                MqttMessage(encrypted.toByteArray(Charsets.UTF_8)).apply { qos = 1 })
         } catch (e: Exception) {
             // Best effort by design; the Last Will covers the unclean case.
             Log.d("dSIM_SyncService", "OFFLINE publish skipped: ${e.message}")

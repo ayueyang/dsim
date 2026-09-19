@@ -36,7 +36,7 @@ object UsageModeManager {
         setMode(context, mode)
         when (mode) {
             UsageMode.LOCAL_ONLY -> {
-                if (MqttSyncService.hasClient()) {
+                if (MqttSyncService.isDaemonActive()) {
                     ContextCompat.startForegroundService(
                         context,
                         Intent(context, MqttSyncService::class.java).apply {
