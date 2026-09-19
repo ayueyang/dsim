@@ -45,6 +45,7 @@
 | `R.string.*` 使用 | **0 次** | `strings.xml` 仅 `app_name` 一条 |
 | DAO 死方法 | 0（批次 E 前 4 个） | W10 已完成 |
 | 有效测试 | 0（2026-09-19：JVM 94 + 仪器 10） | 原仅有 2 个工程模板用例；现有 SendCommandPolicyTest / CloudConfigRestoreTest / OutboxPolicyTest / DsimCryptoUtilsTest / CloudTopicsTest / HeartbeatPolicyTest / ReconnectPolicyTest / SendCostPolicyTest / ReplayGuardTest / CredentialCodecTest / InboundDispatcherTest / SendCommandLedgerTest / SyncOutboxDaoTest |
+| 入站突发吞吐（400 条唯一 UUID，无 kill） | **10.054 s → 14.667 s（+45.9%，2026-09-19 串行化后）** | 口径含 adb/采样与停机重启，非纯 handler 计时；见 §3 W22 与 `FIXES_2026-09-19.md` §F3 |
 | 非空断言 `!!` | 1 处 | 这一项是好的 |
 
 ---
@@ -74,6 +75,7 @@
 | W19 | **P0 ✅ 已完成** | 入站短信可靠同步：`sync_outbox` + 持久 MQTT 会话 | M | — |
 | W20 | **P0 ✅ 已完成** | 耗电：口令→主密钥一次派生（新魔数 DSM3）、按 topic 后缀跳过自身回声、心跳按变化发布 + LWT OFFLINE | M | 详见 `FIXES_2026-09-18.md` 第三批 |
 | W21 | P1 | ✅（批次 E）发送回执 / 历史 ACK 也走 `SyncOutbox`（W19 未覆盖） | S | W19 |
+| W22 | P2（**仅追踪**） | 入站串行化的吞吐代价（`InboundCommitGate` 单 Mutex）：用户裁决「接受并记录，不改设计」 | S（评估） | 历史导入性能优化时评估 |
 
 ---
 
@@ -355,6 +357,29 @@
 **不进发件箱**：PING / PONG / OFFLINE / 雷达 PING / 聊天页发出的 `SEND_CMD`（用户可见失败并可重试，且 C11 的"不自动重发"语义要求发送指令不能在后台悄悄补发）。
 
 **验证**：JVM 64/64（新增 2 个 `controlKey` / `buildControlEntry` 测试）；模拟器：历史导入行 → `HISTORY_SYNC_ACK` 2.1 s，同行重发 → `already_exists` ACK 2.3 s；`SEND_CMD` → `SEND_CMD_RESULT(SENT)` + 已发短信同步 1.9 s（`outbox[capture] sent=2`）；断网期间收到短信 → 落库，重连后 `outbox[connect] sent=1`。
+
+---
+
+### W22（P2，仅追踪）入站串行化的吞吐代价 — 已记录，刻意不改设计
+
+**现象**：T0.3 引入的 `InboundCommitGate` 把「检查 → 处理 → 提交后标记 nonce」放进同一把 `Mutex` 临界区，入站处理由并发变为严格串行。检查与提交跨越一次挂起（Room 落库），所以只加"检查锁"仍会让两条同 nonce 并发双通过——这是刻意选串行的原因。
+
+**实测**（2026-09-19，F3；同一 API 36 模拟器 + 本机 Mosquitto，400 条唯一 UUID 的 DSM3 突发）：
+
+| 场景 | 串行化前 `1816213` | 串行化后 `c2bddfb` | 变化 |
+|---|---:|---:|---:|
+| 无 kill，全部 400 条一致快照耗时上界 | 10.054 s | 14.667 s | **+45.9%**（≈37 ms/条） |
+| kill 进程后恢复 | 23.831 s | 27.540 s | +15.6% |
+| 丢失 / 重复行 | 0 / 0 | 0 / 0 | 无变化 |
+| `dup=true` 重投次数 | 0（无 kill）/ 20（kill） | 0 / 20 | 无变化 |
+
+口径与原始产物见 `FIXES_2026-09-19.md` §F3（证据在仓库外 `C:\Users\admin\AgentDock\dsim-f3-evidence\`，未入 git）。单组固定顺序、宿主负载未隔离，只作退化信号，不作统计结论。
+
+**用户裁决（2026-09-19）**：**接受并记录，不为此改回并发设计**。理由：正常收信（每分钟几条）无感；只有历史导入补投上千条时可感（数千条 = 分钟级），而改回并发的收益与重新引入竞态的风险不成比例。
+
+**触发条件**（何时回来做）：开始历史导入性能优化，或补投达到数千条且出现可感延迟时再评估。
+
+**候选方向**（均未批准、未实现，先不要写代码）：① 按 `sender + nonce` 的「预留-提交」两态，缩短临界区；② 临界区内批量落库（一次事务多条）以减少挂起次数；③ 导入路径批量化，避免逐条占用 QoS1 在途窗口。任何一项都必须先取得用户批准，且不得破坏 C24 手动 ack 契约。
 
 ---
 
