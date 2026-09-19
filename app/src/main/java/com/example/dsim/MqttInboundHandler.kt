@@ -48,11 +48,11 @@ internal class MqttInboundHandler(
             }
             val inbound = envelope.inbound
             val senderId = MqttPayloadCodec.senderId(inbound).ifBlank { senderFromTopic.orEmpty() }
-            // F9: freshness + uniqueness before any side effect. OFFLINE gets the wide window
-            // because the Last Will was stamped at connect time.
-            val window = if (inbound is Offline) ReplayGuard.OFFLINE_WINDOW_MS else ReplayGuard.DEFAULT_WINDOW_MS
+            // Durable UUID-idempotent deliveries can be queued offline longer than a short TTL.
+            // SEND_CMD still expires after 10 minutes; MQTT dup never bypasses the guard.
+            val policy = ReplayGuard.Policy.forMessage(inbound)
             val verdict = synchronized(replayGuard) {
-                replayGuard.check(senderId, envelope.ts, envelope.nonce, System.currentTimeMillis(), window)
+                replayGuard.check(senderId, envelope.ts, envelope.nonce, System.currentTimeMillis(), policy)
             }
             if (verdict is ReplayGuard.Verdict.Reject) {
                 logReplayReject(verdict, inbound, senderId)

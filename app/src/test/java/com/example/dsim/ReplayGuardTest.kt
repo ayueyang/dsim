@@ -1,68 +1,93 @@
 package com.example.dsim
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import com.example.dsim.database.SmsMessage
+import org.junit.Assert.*
 import org.junit.Test
 
 class ReplayGuardTest {
     private val now = 1_800_000_000_000L
-
+    private val short = ReplayGuard.Policy.SHORT_LIVED
+    private val durable = ReplayGuard.Policy.DURABLE
     private fun reject(v: ReplayGuard.Verdict) = (v as ReplayGuard.Verdict.Reject).reason
 
     @Test fun freshUniqueIsAccepted() {
         val g = ReplayGuard()
-        assertTrue(g.check("A", now - 1000, "n1", now) is ReplayGuard.Verdict.Accept)
-        assertTrue(g.check("A", now + 1000, "n2", now) is ReplayGuard.Verdict.Accept)
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now - 1000, "n1", now, short))
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now + 1000, "n2", now, short))
     }
 
-    @Test fun missingFieldsRejected() {
-        val g = ReplayGuard()
-        assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", null, "n", now)))
-        assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", now, null, now)))
-        assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", now, "", now)))
-        assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", 0L, "n", now)))
+    @Test fun missingFieldsRejectedForEveryPolicy() {
+        for (policy in ReplayGuard.Policy.values()) {
+            val g = ReplayGuard()
+            assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", null, "n", now, policy)))
+            assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", now, null, now, policy)))
+            assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", now, " ", now, policy)))
+            assertEquals(ReplayGuard.Reason.MISSING, reject(g.check("A", 0L, "n", now, policy)))
+        }
     }
 
-    @Test fun staleBothDirections() {
+    @Test fun staleBothDirectionsAndBoundaryAccepted() {
         val g = ReplayGuard()
         val w = ReplayGuard.DEFAULT_WINDOW_MS
-        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", now - w - 1, "n1", now)))
-        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", now + w + 1, "n2", now)))
-        assertTrue(g.check("A", now - w, "n3", now) is ReplayGuard.Verdict.Accept)
+        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", now - w - 1, "n1", now, short)))
+        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", now + w + 1, "n2", now, short)))
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now - w, "n3", now, short))
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now + w, "n4", now, short))
     }
 
     @Test fun duplicateNonceFromSameSenderRejected_otherSenderOk() {
         val g = ReplayGuard()
-        assertTrue(g.check("A", now, "n", now) is ReplayGuard.Verdict.Accept)
-        assertEquals(ReplayGuard.Reason.DUPLICATE, reject(g.check("A", now, "n", now)))
-        assertTrue(g.check("B", now, "n", now) is ReplayGuard.Verdict.Accept)
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now, "n", now, durable))
+        assertEquals(ReplayGuard.Reason.DUPLICATE, reject(g.check("A", now, "n", now, durable)))
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("B", now, "n", now, durable))
     }
 
-    @Test fun offlineWindowIsWider() {
+    @Test fun offlineWindowIsWiderButStillBounded() {
         val g = ReplayGuard()
         val old = now - 6 * 60 * 60_000L
-        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", old, "n1", now)))
-        assertTrue(g.check("A", old, "n2", now, ReplayGuard.OFFLINE_WINDOW_MS) is ReplayGuard.Verdict.Accept)
+        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", old, "n1", now, short)))
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", old, "n2", now, ReplayGuard.Policy.OFFLINE))
+        assertEquals(ReplayGuard.Reason.STALE, reject(g.check("A", now - ReplayGuard.OFFLINE_WINDOW_MS - 1, "n3", now, ReplayGuard.Policy.OFFLINE)))
     }
 
     @Test fun lruEvictionBoundsMemory() {
         val g = ReplayGuard(capacity = 100)
-        for (i in 0 until 500) g.check("A", now, "n$i", now)
-        assertTrue(g.size <= 100)
-        // the oldest nonce was evicted, so a replay of it now slips through the LRU but is still
-        // inside the window - this is the documented trade-off of a bounded cache
-        assertTrue(g.check("A", now, "n0", now) is ReplayGuard.Verdict.Accept)
-        // the newest is still remembered
-        assertEquals(ReplayGuard.Reason.DUPLICATE, reject(g.check("A", now, "n499", now)))
+        for (i in 0 until 500) g.check("A", now, "n$i", now, durable)
+        assertEquals(100, g.size)
+        assertEquals(ReplayGuard.Verdict.Accept, g.check("A", now, "n0", now, durable))
+        assertEquals(ReplayGuard.Reason.DUPLICATE, reject(g.check("A", now, "n499", now, durable)))
     }
 
-    @Test fun expiredEntriesArePruned() {
+    @Test fun durableNoncesAreNotPrunedByShortWindowTraffic() {
         val g = ReplayGuard(capacity = 10)
-        val w = ReplayGuard.DEFAULT_WINDOW_MS
-        for (i in 0 until 6) g.check("A", now - w + 1000, "old$i", now)
-        // move time forward past the window; next insert triggers the prune
-        val later = now + w + 5000
-        g.check("A", later, "new", later)
-        assertEquals(1, g.size)
+        for (i in 0 until 6) g.check("A", now - 30 * 60_000L, "old$i", now, durable)
+        val later = now + ReplayGuard.DEFAULT_WINDOW_MS + 5000
+        g.check("A", later, "new", later, short)
+        assertEquals(7, g.size)
+        assertEquals(ReplayGuard.Reason.DUPLICATE, reject(g.check("A", now - 30 * 60_000L, "old0", later, durable)))
+    }
+
+    @Test fun allMessageTypesSelectTheirDeclaredPolicy() {
+        val sms = SmsMessage(uuid = "u", address = "10086", body = "fixture", timestamp = now,
+            type = 1, deviceId = "A", simId = 1, iccid = null, mappingKey = "k")
+        for (message in listOf(SmsSync(SyncPayload(sms = sms, remarkPhone = "", deviceName = "A")), SendCmdResult(), HistorySyncAckMsg())) {
+            assertEquals(durable, ReplayGuard.Policy.forMessage(message))
+            assertEquals(ReplayGuard.Verdict.Accept, ReplayGuard().check("A", now - 30 * 60_000L, "n", now, ReplayGuard.Policy.forMessage(message)))
+        }
+        for (message in listOf(SendCmd(), Ping(), Pong(), HistoryQueueBatch())) {
+            assertEquals(short, ReplayGuard.Policy.forMessage(message))
+            assertEquals(ReplayGuard.Reason.STALE, reject(ReplayGuard().check("A", now - 30 * 60_000L, "n", now, ReplayGuard.Policy.forMessage(message))))
+        }
+        assertEquals(ReplayGuard.Policy.OFFLINE, ReplayGuard.Policy.forMessage(Offline()))
+    }
+
+    @Test fun expiredSendCommandNeverReachesExecution() {
+        var executed = false
+        val g = ReplayGuard()
+        val verdict = g.check("A", now - 10 * 60_000L - 1, "n", now, ReplayGuard.Policy.forMessage(SendCmd()))
+        if (verdict == ReplayGuard.Verdict.Accept) executed = true
+        assertFalse(executed)
+        assertEquals(0, g.size)
+        assertEquals(ReplayGuard.Reason.STALE, reject(verdict))
     }
 }
