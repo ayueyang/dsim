@@ -16,7 +16,7 @@ dSIM 是一款 Android 应用：多台设备填入同一组 `MQTT Broker + Topic
 
 - 单模块 Gradle 工程，`rootProject.name = "dSIM"`，模块 `:app`
 - 包名 `com.example.dsim`，源码根 `app/src/main/java/com/example/dsim/`
-- 55 个 Kotlin 文件 / 约 14,300 行
+- Kotlin 文件数 / 行数**刻意不写死**（该类数字历史上已三次漂移过期）：以源码与 §5 文件树为准，文件树由 `scripts/check-agents-tree.sh` 强制同步（F-1）
 
 ---
 
@@ -125,20 +125,25 @@ dSIM/
         │   ├── java/com/example/dsim/
         │   │   ├── database/
         │   │   │   ├── DsimEntities.kt           6 个 @Entity
-        │   │   │   ├── DsimDao.kt                40 个 DAO 方法
+        │   │   │   ├── DsimDao.kt                DAO 收口
         │   │   │   └── DsimDatabase.kt           v7 + 6 次 Migration
-        │   │   ├── MqttSyncService.kt            ★ 前台服务：连接生命周期 / 心跳循环 / 通知 / 冲刷发件箱（W4 后 568 行）
+        │   │   ├── MqttSyncService.kt            ★ 前台服务：连接生命周期 / 心跳循环 / 通知 / 冲刷发件箱
         │   │   ├── CloudSession.kt               当前组凭据（服务写，Publisher/Inbound 读）
+        │   │   ├── CloudTopics.kt                发布/订阅 topic 布局（C13 实现点）
         │   │   ├── MqttPublisher.kt              全部出站控制消息 + 心跳指纹（C13/C14 实现点）
+        │   │   ├── HeartbeatPolicy.kt            快照发布决策：指纹变化 / 静默上限（C14 实现点）
+        │   │   ├── ReconnectPolicy.kt            重连退避：间隔倍增封顶（C20 实现点）
         │   │   ├── InboundDispatcher.kt          messageArrived → 协程 → 处理完成后手动 PUBACK（C24 实现点）
         │   │   ├── InboundOutcome.kt             入站三态提交结果（Committed / PermanentlyRejected / RetryableFailure）
         │   │   ├── InboundCommitGate.kt          防重放检查 → 处理 → 提交成功才标记 nonce 的串行化闸门（Mutex）
+        │   │   ├── ReplayGuard.kt                ts/nonce 信封防重放（C22 实现点）
         │   │   ├── MqttInboundHandler.kt         解密 → MqttPayloadCodec.decode → when(inbound) 分发
         │   │   ├── SyncOutbox.kt                 ★ 入站同步发件箱：事务入队 + 单飞冲刷
         │   │   ├── OutgoingSmsDispatcher.kt     原子认领及系统发送
         │   │   ├── SmsSentResultReceiver.kt     系统发送回调
         │   │   ├── SendCommandPolicy.kt         分段状态纯逻辑
         │   │   ├── SendCommandPreparation.kt     SEND_CMD 业务拒绝类型化 + 拒绝先落持久失败回执
+        │   │   ├── SendCostPolicy.kt             代发费用闸（C21 实现点）
         │   │   ├── DsimCryptoUtils.kt            ★ 加解密 DSM3（AEAD）
         │   │   ├── HistorySyncQueueManager.kt    历史同步队列状态机
         │   │   ├── HistoryQueueNotificationHelper.kt
@@ -167,13 +172,18 @@ dSIM/
         │   │   ├── DeviceDirectoryManager.kt     设备档案
         │   │   ├── DeviceNameManager.kt
         │   │   ├── NotificationUtils.kt          通知渠道与构建
+        │   │   ├── NotificationPreferences.kt    通知静音开关（F16：收口 dSIM_UI_PREFS 手摸）
         │   │   ├── SenderColorUtils.kt           配色派生
         │   │   ├── SenderColorPreferenceStore.kt 8 色预设
         │   │   ├── ConversationProfileStore.kt   备注/头像/置顶
         │   │   ├── ConversationSenderStore.kt
         │   │   ├── SmsTagParserUtils.kt          来源标签渲染
         │   │   ├── GlobalNumberUtils.kt          E.164 标准化
+        │   │   ├── DsimLog.kt                    脱敏日志门面（T1.4：main 源集日志唯一出口）
         │   │   ├── CloudSettingsManager.kt       云端配置读写
+        │   │   ├── CloudConfigMessages.kt        配置问题的用户可读文案（Settings/Onboarding 共用）
+        │   │   ├── CredentialVault.kt            Keystore GCM 密封口令（W14，seal 失败仅允许明文的唯一分支见 C23）
+        │   │   ├── CredentialCodec.kt            密封帧 v1: 编解码（纯 Kotlin 可单测）
         │   │   ├── DsimNavigation.kt
         │   │   ├── SyncPayload.kt                同步载荷
         │   │   ├── SmsListActivity.kt            LAUNCHER 主入口
