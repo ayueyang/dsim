@@ -281,3 +281,5 @@ bash scripts/emu-down.sh                                         # 收工
 ### 8.3 改完代码后
 
 至少执行一次 `./gradlew :app:compileDebugKotlin`；涉及采集/同步逻辑时再跑一遍 `verify-dsim.sh`。
+
+**每轮回归必须包含 `:app:connectedDebugAndroidTest`，且该轮至少一次在全新安装或清数据的设备上执行**（多设备在线时用 `ANDROID_SERIAL` 指定单台）：仪器测试存在运行期权限、系统短信等设备状态依赖，不能只凭已授权设备的历史绿灯或 JVM 单测替代（F-6）。
