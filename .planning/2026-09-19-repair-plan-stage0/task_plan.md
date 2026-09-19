@@ -4,7 +4,7 @@
 按仓库根目录《修复计划_2026-09-19.md》完成阶段 0（T0.1 Base64 API24、T0.2 按消息语义拆分重放窗口、T0.3 三态 ack + 提交后消耗 nonce、T0.4 推送备份），每任务一个独立 conventional commit，全部验收以真实命令输出为准，随后停下等用户批准才进入阶段 1。
 
 ## Next Step
-T0.4首次push遇远端新增提交后已安全merge并push，当前ahead0；追加本次push证据到FIXES/账本，提交后再push一次，最终确认ahead0并停止等待批准。
+阶段 0 收尾续作 2 已完成（AGENTS 漂移修复 3d1c738 / 仪器复跑 9923853 / W22 登记 da44f6c；本地 3 个提交，**未 push**）。下一步：等用户明确批准后再进阶段 1（T1.1–T1.5）；在此之前不动源码、不开新范围。
 
 ## Current Phase
 Phase 6（收尾：文档提交、push、ahead核对后停止）
@@ -56,6 +56,14 @@ Phase 6（收尾：文档提交、push、ahead核对后停止）
 - [x] API28拉起尝试：sdkmanager下载包损坏，未生成可用system.img，仍未验证；同进程重连未执行（A无配置），F6全局构建/JVM/仪器已完成
 - [ ] 更新远程账本/FIXES，独立提交，push main 与 ahead 0
 
+## 阶段 0 收尾续作 2（2026-09-19 晚，用户指令）
+
+- [x] **1. AGENTS.md 文档漂移修复（收尾审查 §4.2）**：§5 文件树补 `InboundOutcome.kt` / `InboundCommitGate.kt` / `SendCommandPreparation.kt`；同表 `DsimEntities.kt` 5→6 个 `@Entity`、`DsimCryptoUtils.kt` V2→DSM3；§3 入站叙述改三态 ack（`Committed`/`PermanentlyRejected` 才 ack，`RetryableFailure` 与取消不 ack）。commit **3d1c738**（+6/-3）
+- [x] **2. 仪器测试复跑（§4.1）**：冷启动 emulator-5554（dSIM_B，API 36）后 `:app:connectedDebugAndroidTest` → **13/13 (0 skipped, 0 failed)，BUILD SUCCESSFUL in 3m 38s**；机器判定取 `test-result.textproto`（`scheduled_test_case_count: 13`、`test_status: PASSED`）。上次同 HEAD 的 `failed to attach` 归因为**模拟器实例状态**（crash buffer 多条 `DeadSystemException` + `pm list packages` Broken pipe 32），冷启动后消失。commit **9923853**（FIXES +23）
+- [x] **3. REFACTORING.md 登记 W22**：入站串行化吞吐代价 10.054 s → 14.667 s（+45.9%），裁决「接受并记录、不改设计」，列为追踪项（含触发条件与未批准的候选方向）。commit **da44f6c**（+25）
+- **Status:** complete
+- **边界**：未实现 F4、未做 F2 有界隔离/告警、未改并发设计、未进阶段 1、未 push。
+
 ## Key Questions
 1. minSdk 取值？→ 已答：保持 24，只改 Base64，不动 PBKDF2（用户裁决）。
 2. AGENTS C22/C24 与计划冲突？→ 已答：以用户批准的 T0.2/T0.3 具体方案为准；保留手动 ack、处理成功后才 ack、取消不 ack。
@@ -64,7 +72,8 @@ Phase 6（收尾：文档提交、push、ahead核对后停止）
 5. 未知异常如何处理？→ 已答：保守归 RetryableFailure 不 ack，接受可能反复失败并记录在案。
 6. SEND_CMD 业务校验拒绝会不会丢负回执？→ 已答：用户批准类型化区分（SendCommandRejectedException），仍发持久失败回执后 ack；费率算法/账本/电话栈/事务边界一律不动。
 7. planning 三件套是否提交进 git？→ 部分已答：用户裁决放仓库工作目录（现位于本 .planning 计划目录，未提交）；仓库惯例有 docs(planning) checkpoint 提交（如基线 1816213），是否照做待用户定。
-8. 何时恢复执行（重连 E2E → FIXES 补记 → push）？→ 未答：用户 2026-09-19T05:52Z 下达停止指令，等待明确批准。
+8. 何时恢复执行（重连 E2E → FIXES 补记 → push）？→ 部分已答：本续作按用户逐条指令完成了文档/复跑/登记三项；重连 E2E 仍未跑。
+9. 本轮 3 个提交（3d1c738 / da44f6c / 9923853）是否 push 到 origin/main？→ **未答，等用户裁决**（上一轮流程要求 ahead 0，但 push 属对外动作，未获批不做）。
 
 ## Decisions Made
 | Decision | Rationale |

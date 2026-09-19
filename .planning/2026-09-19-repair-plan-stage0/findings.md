@@ -109,6 +109,14 @@
 - B 机设置页 UI（文本化自 uiautomator dump）：顶部“断开”按钮 → 确认对话框（按钮“确认断开”=android:id/button1）；broker 地址、topic、密码输入框与“保存”在已连接时 disabled；滚动/状态变化会改 bounds，操作前必须重新 dump 并核对 enabled+bounds。
 - 双机 SmsListActivity 正常启动，logcat 显示同一 topic 订阅与强制 PONG；B 机最近时间戳 05:14:04/06（UTC）。
 
+## 阶段 0 收尾续作 2（2026-09-19 晚）
+- AGENTS.md 三处漂移均先在代码侧核实再改（不凭审查报告转述）：`DsimEntities.kt` 实测 6 个 `@Entity`；`DsimCryptoUtils.kt` 实测 `private const val AEAD_MAGIC = "DSM3"` 且类注释写「DSM3 取代 DSM2」；`InboundOutcome.kt`(807B) / `InboundCommitGate.kt`(1555B) / `SendCommandPreparation.kt`(722B) 均在 `app/src/main/java/com/example/dsim/`。三态契约以 `InboundDispatcher`（自身回声立即 ack、RetryableFailure 不 ack、取消重新抛出）+ `InboundOutcome.fromFailure`（JsonSyntax→PermanentlyRejected；SQLite/IO/未分类→RetryableFailure）+ `InboundCommitGate`（Mutex 内检查→处理→提交后标记 nonce）源码为准。
+- 仪器复跑（冷启动 emulator-5554 / dSIM_B / API 36）：`Starting 13 tests on dSIM_B(AVD) - 16` → `13/13 completed (0 skipped) (0 failed)` → `BUILD SUCCESSFUL in 3m 38s`。判定取 `test-result.textproto`（`scheduled_test_case_count: 13`、`test_status: PASSED`，13 个 test_result 全 PASSED）；XML `<testcase>` 仅作参考。分布：Example 1 / ReplayDelivery 2 / SendCommandLedger 5 / SyncOutboxDao 5（与审查方口径一致）。
+- 上次同 HEAD `failed to attach` 的证据链（**判为设备状态，不是代码**）：故障实例 uptime≈15 h；`logcat -b crash` 在 12:35–12:47 有多条 `DeadSystemException: The system died`（systemui / com.android.phone / permissioncontroller / settings）；`pm list packages` = `Failure calling service package: Broken pipe (32)`。冷启动后同一条命令通过。未回溯 attach 时刻日志（UTP 已停止 logcat 流、旧实例已 kill），故不下更强结论。
+- 证据目录（仓库外，未入 git）：`C:\Users\admin\AgentDock\dsim-instrumented-evidence\run-20260919T1257Z-refresh\`（逐用例 logcat、textproto、utp.0.log、HTML 报告、README.md 共 35 文件 + README）；审查方失败产物 `...\run-20260919-reviewer-failed\`。
+- 编排限制（本轮实测，后续会话必读）：① MCP 端点经代理，单次 sync `exec_command` ≳100 s 返回 **HTTP 524** → 长任务用 `execution_mode=async` + `session_observe` 轮询；② 远端 exec 走 PowerShell：以引号路径开头要加 `&`，含 `$` 的脚本不要放进双引号字符串（会先被外层吃掉）；③ 单机仪器测试不依赖 modem/第二台设备，故本轮未起 5556。
+- 本轮 3 个提交只改文档（AGENTS/FIXES/REFACTORING），**未碰任何源码、未改锁与协议**；本地 ahead 3、未 push。
+
 ---
 
 *Update this file regularly during research so important evidence remains available after context changes.*

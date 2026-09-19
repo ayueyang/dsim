@@ -1,5 +1,14 @@
 # Progress Log
 
+## Session: 2026-09-19（阶段 0 收尾续作 2：文档漂移 / 仪器复跑 / W22）
+- 起点核对（真实输出）：HEAD=e23ba74；`git rev-list --left-right --count origin/main...main` = 0 0；脏项仅审查方的 `.planning/.active_plan` + `2026-09-18-battery-kdf-topics/task_plan.md` + `2026-09-18-hardening-oneliners/task_plan.md`，未跟踪只读项（`代码质量审查/`、`修复计划_2026-09-19.md`、`claude-fable-5.1-high · 001.md`、审查方账本）**全部未碰**，未用 stash/checkout/clean。
+- 任务 1（**3d1c738**）：AGENTS.md 5 处 file_edit 精准替换（非整文件重写）；`git diff --stat` = 6 insertions / 3 deletions；`BOM=False, CRLF=0, LF=271`。改动前先在代码里核实事实：`DsimEntities.kt` 实测 6 个 `@Entity`、`DsimCryptoUtils.kt` 实测 `AEAD_MAGIC = "DSM3"`、三个新文件确实存在于 `app/src/main/java/com/example/dsim/`。
+- 任务 2（**9923853**）：先把审查方失败产物复制到仓库外 `dsim-instrumented-evidence\run-20260919-reviewer-failed\`；`adb devices` 只有 5554，但 `adb shell pm list packages` 返回 `Failure calling service package: Broken pipe (32)`，`logcat -b crash` 12:35–12:47 多条 `DeadSystemException: The system died` → 判设备不健康。`adb emu kill` → 清 `dSIM_B.avd/multiinstance.lock` → 冷启动 dSIM_B（`scripts/emu-up.sh` 同参数：no-window/no-snapshot/swiftshader/-feature -Vulkan/ICC sim_a.xml，受管会话 session-c29618f94e5bb5e7067af420）→ `sys.boot_completed=1`、pm 正常 → `./gradlew :app:connectedDebugAndroidTest ... --console=plain`（session-72dd3341a26d4f65380efc19）输出 `Starting 13 tests on dSIM_B(AVD) - 16`、`13/13 completed. (0 skipped) (0 failed)`、`BUILD SUCCESSFUL in 3m 38s`。证据 35 文件 + README.md 存 `C:\Users\admin\AgentDock\dsim-instrumented-evidence\run-20260919T1257Z-refresh\`。
+- 任务 3（**da44f6c**）：REFACTORING.md 三处（§1 度量基线 +1 行、§2 总览 +W22 行、§3 W22 详情），共 +25 行，UTF-8 无 BOM / LF。
+- 本轮新增环境坑：① MCP 端点经代理，单次 sync `exec_command` 超过约 100 s 触发 **HTTP 524**，长任务必须 `execution_mode=async` 拿 session_id 再用 `session_observe` 轮询；② 远端 exec 走 PowerShell，引号路径开头必须加 `&` 调用运算符，含 `$` 的脚本不要放进双引号字符串；③ 本轮启动 Gradle 时提示 “5 busy and 3 incompatible and 1 stopped Daemons”（未清理）。
+- 现状：本地 3 个提交、**ahead 3、未 push**；阶段 1 未开始；等用户批准。
+
+
 ## Session: 2026-09-19（本轮审查收尾续作）
 - T0.4首次push被远端新增提交拒绝；fetch发现8cdffee/688645b删除远端旧文档。未强推，merge --no-ff生成931196e并再次push成功：main [origin/main]，rev-list左右=0/0。
 - push后仅FIXES/本账本需追加本证据，随后做一次文档commit并再次push以使远端账本包含ahead0证据；其他planning脏项与用户只读未跟踪项不碰。
