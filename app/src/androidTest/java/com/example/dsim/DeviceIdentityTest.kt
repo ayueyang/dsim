@@ -1,14 +1,18 @@
 package com.example.dsim
 
+import android.Manifest
 import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.GrantPermissionRule
 import com.example.dsim.database.DsimDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -18,6 +22,9 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class DeviceIdentityTest {
+
+    @get:Rule
+    val smsPermissionRule: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_SMS)
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
@@ -56,7 +63,8 @@ class DeviceIdentityTest {
         val previousCursorId = importPrefs.getLong("CURSOR_ID", Long.MIN_VALUE)
         val systemCount = context.contentResolver.query(
             android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id"), null, null, null)?.use { it.count } ?: 0
-        assertTrue("test needs system SMS rows to import, found $systemCount", systemCount > 0)
+        // Empty system libraries are a missing fixture, not an import failure.
+        assumeTrue("test needs system SMS rows to import, found $systemCount", systemCount > 0)
 
         try {
             SystemSmsHistoryImporter.setEnabled(context, true)
