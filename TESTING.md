@@ -503,3 +503,45 @@ SEND_CMD 端到端已按 §5.2 实测跑通，不再列为缺口。
 - 发信端/执行端都升级，系统回调前 status=0；全部分段回调成功后 status=1。未知为 -2，点击查询不会再次执行已认领 UUID。
 - 新建短信才生成新的发送 UUID；已提交但无回调时不能将超时直接视为“没有发送”。
 - 旧版发送记录在 v6 迁移为不可重放的 UNKNOWN 墓碑，原短信保留。
+
+## 2026-09-20 批次 A 返工 / B：短信身份与发送状态验收
+
+### 完整套件与来源记录
+
+本轮最终源码的默认 instrumentation 集合是47例；应从源码重新提取，再与 XML 的 `(classname,name)` 完全比较，不能把这一数字当作未来不变常量。两次独立新装均47/47、0 failure/error/skipped；第二轮强制 JVM 单任务重跑115/115。原始逐例记录：仓库外 `C:/Users/admin/AgentDock/dsim-stage1-evidence/batchB-full-case-protection-audit.log`。lint 独立报告5个原有error、312warning、NewApi0；对比修复前5/313，唯一 issue ID 数量变化为 UnsafeProtectedBroadcastReceiver -1，五个error的文件/行/文案未变。
+
+务必选独立测试 AVD，显式设置 ANDROID_SERIAL。全套默认分支不应直接运行在已配置的双机验收设备上；RemoteSenderUiTest 的空选择前提、权限自足验证都需要新装/清数据。本轮使用外部 `batchB-run-gradle.py` 检查 app/test 包均不存在后启动 Gradle，逐轮隔离并归档新报告，不把 UP-TO-DATE 的旧 XML 当作新测。
+
+```bash
+export ANDROID_SERIAL=emulator-5562
+export JAVA_HOME='/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot'
+./gradlew :app:testDebugUnitTest --rerun :app:connectedDebugAndroidTest   '-Dorg.gradle.java.installations.paths=C:\Program Files\Microsoft\jdk-21.0.7.6-hotspot'
+```
+
+### T3.4 的两个独立反例
+
+1. `IncomingSmsDedupTest.sameContentFourSecondsApartRepresentsTwoMessages` 使用精确相差4000ms的 PDU 时间，两条必须保留；同内容同时间重投则保留原 id/uuid。先红 expected2/actual1，再绿。
+2. `HistoryImportTimestampTest.closeProviderRowsSurviveImportAndRepeatImportKeepsIdentity` 从真实 Telephony provider 读取两行，而不是假设 adopt 权限可插入。新装应用前，确认默认系统短信应用可接收，再在同一专用 AVD 向10086连续投递两次相同 `BATCHBIMPORT-<唯一标记>` 正文、命令间隔4秒。测试先验证真实 provider 的两个 id、不同 DATE 且间隔不超过120秒，再验证导入后仍两行、重复扫描的 id/uuid 不变。无这组 fixture 会明确 skip，不算该断言通过。
+
+本轮两条历史 fixture 的 provider DATE 实际差3307ms（系统默认应用用自己的入库时刻，不保证等于命令间隔或 PDU 时间）。旧导入器确实合成一行，新导入器保留两行。本轮默认47例中该例无skip。
+
+API28普通 shell 缺 READ_SMS 的限制仍成立。实际权限回归使用 APK 内 GrantPermissionRule；双机时仅对自建 userdebug API28 AVD 用 `su 0 content query` 作**只读系统库核对**，已经取得真实行，未修改 provider、未把它冒充 app 权限自足证明。API36端须独立确认自己的实际查询输出，不能泛化权限行为。
+
+### 费用/状态与显式双机故障探针
+
+- T2.1 的5例验证末段额度并发认领、重复 UUID 不重复预留、事务回滚、认领日计费、混合结果的保守上界。两段一成功一失败计2段上界，不宣称计1段或测得真实账单。
+- T2.2 的6例验证四写回滚、重复补齐两类队列、终态/隐私/换组/无效段号与文件数据库重开。T2.3 的2例验证仅远端 active 卡可选以及本机卡 retry 守卫；`setOnClickListener(null)` 不会自动清除 clickable，须保留显式禁用断言。
+- F4 的6例覆盖过期持久FAILED回执、任何已有账本不覆盖、身份/原因/模式/组守卫、SQLite故障不ACK且不消费nonce、真实 Paho loopback QoS1离线后排空、请求端目标/executor校验与0→-1。JVM另覆盖拒绝 outcome 与取消。
+
+以下都是 **debug、显式 opt-in、专用设备** 分支。普通47例不自动执行它们；运行时必须保存原始 instrumentation 输出和实际双端数据库/MQTT观测，不能仅凭方法的默认分支通过就宣称双机完成。
+
+| 入口 | 参数 | 外部驱动必须核实 |
+|---|---|---|
+| `SendResultTransactionTest#committedResultSurvivesDatabaseReopen` | `t22CrashUuid`、`t22Requester` | 合成 callback 调用生产 onSentResult 后，出现提交标记并真实 killProcess；实际账本SENT、短信1、两条outbox仍在，请求端仍0。不是运营商短信发送或真实 sent 广播回调 |
+| `SendResultTransactionTest#duplicateCallbackRepairsEitherMissingOutboxRow` | `t22Resume=true` | 离线状态先启动恢复探针，再恢复原网络；队列排空，真实对端收到结果及最终SMS_SYNC并变1 |
+| `RemoteSenderUiTest#emptyRemoteSelectionDisablesSend` | `t23LiveMarker` | 对端必须明确保持 remote-send disabled；真实聊天点击发布SEND_CMD、对端拒绝、请求端变-1，无执行账本/运营商调用 |
+| `ExpiredSendCommandTest#staleCommandQueuesOneExplicitFailedResultWithoutClaiming` | `f4LiveUuid`、`f4Requester` | 请求端由合成SMS_SYNC预置0；执行端断网后调用真实解密/判拒处理器两次，仅一个expired队列、无账本；恢复网络后真实MQTT回执使请求端-1。另发真实broker过期SEND_CMD覆盖入站topic路径 |
+
+故障探针的预期 `Process crashed` 不能当作普通47例中的通过，也不能隐藏成零失败；故障试验仅在标记、持久四写、恢复后对端终态均测得后成立。“一次”指该轮队列/传输观测，不保证 PUBACK 与删除之间再崩溃时的全局 exactly-once。
+
+双机前先实际核实 HAS_SEEN_ONBOARDING=true、模式/默认短信角色、active本机卡、不同设备id及双向PONG。`onboard-device.sh` exit0不代表已经完成；本轮遇到停在绑定/完成页、非导出 Activity 不能从 shell 直接启动、熄屏空XML及按钮在屏外，均补走真实 UI，不能直写 prefs 冒充引导。
