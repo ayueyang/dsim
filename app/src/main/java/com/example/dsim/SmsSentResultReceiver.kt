@@ -3,6 +3,7 @@ package com.example.dsim
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -16,17 +17,19 @@ class SmsSentResultReceiver : BroadcastReceiver() {
         val code = resultCode
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            var outcome: com.example.dsim.database.SendCommandRecord? = null
+            var shouldFlush = false
             try {
-                outcome = OutgoingSmsDispatcher.onSentResult(context.applicationContext, uuid, part, code)
+                shouldFlush = OutgoingSmsDispatcher.onSentResult(context.applicationContext, uuid, part, code) != null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DsimLog.e("dSIM_Send", "Failed to persist SMS sent callback", e)
             } finally {
                 pending.finish()
             }
-            // Broker I/O must not hold BroadcastReceiver's time budget. The result is durable;
-            // publication is best-effort and the same UUID can be queried after reconnect.
-            outcome?.let { OutgoingSmsDispatcher.publishOutcome(context.applicationContext, it) }
+            // State and both outbox rows are already committed before finish(). A crash here
+            // only delays the durable queue until the next connection or heartbeat.
+            if (shouldFlush) SyncOutbox.requestFlush(context.applicationContext)
         }
     }
 }

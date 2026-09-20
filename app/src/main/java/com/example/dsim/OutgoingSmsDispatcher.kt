@@ -141,21 +141,40 @@ object OutgoingSmsDispatcher {
     }
 
     suspend fun onSentResult(context: Context, uuid: String, part: Int, resultCode: Int): SendCommandRecord? {
-        val database = DsimDatabase.getDatabase(context)
-        val dao = database.dsimDao()
-        val outcome = database.withTransaction {
-            val previous = dao.getSendCommand(uuid) ?: return@withTransaction null
-            val updated = SendCommandPolicy.recordPart(previous, part, resultCode == Activity.RESULT_OK, resultCode)
-            if (updated == previous) return@withTransaction null
-            dao.updateSendCommand(updated)
-            dao.updateMessageStatus(uuid, SendCommandPolicy.status(updated.state), updated.errorMsg)
-            updated
-        } ?: return null
+        val outcome = persistSentResult(DsimDatabase.getDatabase(context), uuid, part, resultCode,
+            publicationGroup(context), DeviceNameManager.getDisplayName(context)) ?: return null
+        // Compensatable provider I/O is outside Room. Valid duplicate callbacks retry it too.
         if (outcome.state == SendCommandPolicy.SENT) {
             SystemSmsStore.insertSentIfNeeded(context, outcome.address, outcome.body,
                 outcome.createdAt, outcome.subscriptionId)
         }
-        return outcome.takeIf { it.state != SendCommandPolicy.PENDING }
+        return outcome
+    }
+
+    /** Commit ledger, message state and BOTH final publications before releasing the receiver. */
+    internal suspend fun persistSentResult(
+        database: DsimDatabase, uuid: String, part: Int, resultCode: Int,
+        publishGroup: String?, deviceName: String
+    ): SendCommandRecord? = database.withTransaction {
+        val dao = database.dsimDao()
+        val previous = dao.getSendCommand(uuid) ?: return@withTransaction null
+        if (part !in 0 until previous.partCount) return@withTransaction null
+        val updated = SendCommandPolicy.recordPart(previous, part, resultCode == Activity.RESULT_OK, resultCode)
+        if (updated != previous) {
+            dao.updateSendCommand(updated)
+            dao.updateMessageStatus(uuid, SendCommandPolicy.status(updated.state), updated.errorMsg)
+        }
+        if (updated.state == SendCommandPolicy.PENDING) return@withTransaction null
+        // Even an unchanged terminal callback must repair either missing outbox row.
+        enqueueOutcome(database, updated, publishGroup, deviceName)
+        updated
+    }
+
+    private fun publicationGroup(context: Context): String? {
+        if (!UsageModeManager.canUseCloud(context)) return null
+        val cloud = CloudSettingsManager.getConfig(context)
+        if (cloud.broker.isBlank() || cloud.topic.isBlank() || cloud.password.isBlank()) return null
+        return groupFingerprint(cloud)
     }
 
     private fun toSms(record: SendCommandRecord) = SmsMessage(
@@ -171,10 +190,19 @@ object OutgoingSmsDispatcher {
      * after reconnect and drops it if the user has since left the group.
      */
     internal suspend fun publishOutcome(context: Context, record: SendCommandRecord) {
-        if (!UsageModeManager.canUseCloud(context)) return
-        val cloud = CloudSettingsManager.getConfig(context)
-        // A callback may arrive after the user switches cloud groups. Never leak into the new group.
-        if (groupFingerprint(cloud) != record.groupFingerprint) return
+        val database = DsimDatabase.getDatabase(context)
+        val group = publicationGroup(context)
+        val name = DeviceNameManager.getDisplayName(context)
+        val queued = database.withTransaction { enqueueOutcome(database, record, group, name) }
+        if (queued) SyncOutbox.requestFlush(context)
+    }
+
+    // Caller owns the transaction; this method performs no service start or broker/provider I/O.
+    private suspend fun enqueueOutcome(
+        database: DsimDatabase, record: SendCommandRecord, publishGroup: String?, deviceName: String
+    ): Boolean {
+        if (publishGroup == null || publishGroup != record.groupFingerprint) return false
+        val dao = database.dsimDao()
         val result = MqttPayloadCodec.encode(
             SendCmdResult(
                 uuid = record.uuid,
@@ -187,15 +215,16 @@ object OutgoingSmsDispatcher {
                 timestamp = System.currentTimeMillis()
             )
         )
-        SyncOutbox.enqueueControl(context, SyncOutbox.KIND_SEND_CMD_RESULT, record.uuid, record.state,
-            result, record.groupFingerprint)
+        dao.enqueueOutbox(SyncOutbox.buildControlEntry(SyncOutbox.KIND_SEND_CMD_RESULT, record.uuid,
+            record.state, result, record.groupFingerprint))
         if (record.state == SendCommandPolicy.SENT || record.state == SendCommandPolicy.FAILED) {
             // Ordinary sync carries the final state; do not announce an unconfirmed submission.
             val payload = SyncPayload(toSms(record), record.remarkPhone,
-                DeviceNameManager.getDisplayName(context), silentSync = true)
-            SyncOutbox.enqueueControl(context, SyncOutbox.KIND_SMS_SYNC, record.uuid, "sent:" + record.state,
-                MqttPayloadCodec.encode(payload), record.groupFingerprint)
+                deviceName, silentSync = true)
+            dao.enqueueOutbox(SyncOutbox.buildControlEntry(SyncOutbox.KIND_SMS_SYNC, record.uuid,
+                "sent:" + record.state, MqttPayloadCodec.encode(payload), record.groupFingerprint))
         }
+        return true
     }
 
     private fun smsManager(context: Context, subscription: Int?): SmsManager {
