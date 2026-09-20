@@ -81,4 +81,34 @@ class InboundCommitGateTest {
             })
         }
     }
+
+    @Test fun rejectionSideEffectFailureMustRemainRetryable() = runBlocking {
+        val guard = ReplayGuard()
+        val gate = InboundCommitGate(guard)
+        val now = 1_800_000_000_000L
+        val stale = DecodedEnvelope(SendCmd(), now - ReplayGuard.DEFAULT_WINDOW_MS - 1, "stale-effect")
+        val result = gate.process(stale, "peer", nowMs = { now }, onRejected = {
+            InboundOutcome.RetryableFailure
+        }) { fail("stale command must never execute"); InboundOutcome.Committed }
+        assertEquals(InboundOutcome.RetryableFailure, result)
+        assertEquals(0, guard.size)
+    }
+    @Test fun cancellationDuringRejectionNeverConsumesNonce() = runBlocking {
+        val guard = ReplayGuard()
+        val gate = InboundCommitGate(guard)
+        val now = 1_800_000_000_000L
+        val stale = DecodedEnvelope(SendCmd(), now - ReplayGuard.DEFAULT_WINDOW_MS - 1, "cancel-rejection")
+        val entered = CompletableDeferred<Unit>()
+        val job = launch {
+            gate.process(stale, "peer", nowMs = { now }, onRejected = {
+                entered.complete(Unit)
+                awaitCancellation()
+            }) { fail("stale command must never execute"); InboundOutcome.Committed }
+        }
+        withTimeout(2_000) { entered.await() }
+        job.cancelAndJoin()
+        assertEquals(0, guard.size)
+        assertEquals(InboundOutcome.PermanentlyRejected,
+            gate.process(stale, "peer", nowMs = { now }) { InboundOutcome.Committed })
+    }
 }

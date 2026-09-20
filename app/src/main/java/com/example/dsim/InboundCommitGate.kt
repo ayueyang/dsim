@@ -17,14 +17,17 @@ internal class InboundCommitGate(private val guard: ReplayGuard = ReplayGuard())
         envelope: DecodedEnvelope,
         senderId: String,
         nowMs: () -> Long = System::currentTimeMillis,
-        onRejected: (ReplayGuard.Verdict.Reject) -> Unit = {},
+        onRejected: suspend (ReplayGuard.Verdict.Reject) -> InboundOutcome = { InboundOutcome.PermanentlyRejected },
         block: suspend () -> InboundOutcome
     ): InboundOutcome = mutex.withLock {
         val verdict = guard.checkFreshness(senderId, envelope.ts, envelope.nonce, nowMs(),
             ReplayGuard.Policy.forMessage(envelope.inbound))
         if (verdict is ReplayGuard.Verdict.Reject) {
-            onRejected(verdict)
-            return@withLock InboundOutcome.PermanentlyRejected
+            // A rejection may itself require a durable response. Never acknowledge failed work,
+            // and never consume a rejected nonce (including cancellation during persistence).
+            val outcome = onRejected(verdict)
+            currentCoroutineContext().ensureActive()
+            return@withLock outcome
         }
         val outcome = block()
         currentCoroutineContext().ensureActive()

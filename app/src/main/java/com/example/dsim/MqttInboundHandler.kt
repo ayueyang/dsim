@@ -1,6 +1,7 @@
 package com.example.dsim
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.example.dsim.MqttSyncService.Companion.HistorySyncAck
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SimCardConfig
@@ -60,7 +61,10 @@ internal class MqttInboundHandler(
             }
             val senderId = MqttPayloadCodec.senderId(envelope.inbound).ifBlank { senderFromTopic.orEmpty() }
             return commitGate.process(envelope, senderId,
-                onRejected = { logReplayReject(it, envelope.inbound, senderId) }) {
+                onRejected = {
+                    logReplayReject(it, envelope.inbound, senderId)
+                    rejectExpiredCommand(it, envelope.inbound, senderFromTopic)
+                }) {
                 processDecoded(envelope.inbound, decryptedJson, senderId)
             }
         } catch (e: CancellationException) {
@@ -71,6 +75,40 @@ internal class MqttInboundHandler(
             DsimLog.e("dSIM_SyncService", "处理云端消息失败: $outcome", e)
             return outcome
         }
+    }
+
+    /** Expiry is not execution. Ledger lookup and receipt insertion share the claim's DB lock. */
+    private suspend fun rejectExpiredCommand(
+        verdict: ReplayGuard.Verdict.Reject,
+        inbound: MqttInbound,
+        senderFromTopic: String?
+    ): InboundOutcome {
+        if (verdict.reason != ReplayGuard.Reason.STALE || inbound !is SendCmd) {
+            return InboundOutcome.PermanentlyRejected
+        }
+        if (inbound.uuid.isBlank() || inbound.deviceId.isBlank() ||
+            inbound.deviceId != senderFromTopic || inbound.mappingKey.isBlank()) {
+            return InboundOutcome.PermanentlyRejected
+        }
+        val database = DsimDatabase.getDatabase(context)
+        val dao = database.dsimDao()
+        val queued = database.withTransaction {
+            // FIRST inspect every possible ledger state, never overwrite an actual send outcome.
+            if (dao.getSendCommand(inbound.uuid) != null) return@withTransaction false
+            if (!UsageModeManager.canUseCloud(context) || !session.isConfigured) return@withTransaction false
+            val current = CloudSettingsManager.getConfig(context)
+            if (listOf(current.broker, current.topic, current.password).any { it.isBlank() }) return@withTransaction false
+            val group = SyncOutbox.groupFingerprint(session.config())
+            if (group != SyncOutbox.groupFingerprint(current)) return@withTransaction false
+            val config = dao.getSimConfigByKey(inbound.mappingKey) ?: return@withTransaction false
+            if (!config.isActive || config.bindMode == "REMOTE_SHADOW") return@withTransaction false
+            dao.enqueueOutbox(publisher.buildExpiredSendCommandResult(inbound.uuid, inbound.deviceId, group))
+            true
+        }
+        // No carrier call or execution ledger. Storage failures propagate to the retryable boundary;
+        // requesting a flush before this transaction commits could lose the response on process death.
+        if (queued) SyncOutbox.requestFlush(context)
+        return InboundOutcome.PermanentlyRejected
     }
 
     private suspend fun processDecoded(

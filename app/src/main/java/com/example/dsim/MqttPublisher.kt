@@ -82,6 +82,25 @@ internal class MqttPublisher(
         )
     }
 
+    /** Built here but inserted by the caller's ledger-check transaction; never flush inside it. */
+    fun buildExpiredSendCommandResult(
+        uuid: String,
+        targetDeviceId: String,
+        group: String
+    ): com.example.dsim.database.SyncOutboxEntry = SyncOutbox.buildControlEntry(
+        SyncOutbox.KIND_SEND_CMD_RESULT, uuid, "expired",
+        MqttPayloadCodec.encode(SendCmdResult(
+            uuid = uuid,
+            targetDeviceId = targetDeviceId,
+            deviceId = HardwareProbeUtils.getDeviceId(context),
+            deviceName = DeviceNameManager.getDisplayName(context),
+            success = false,
+            state = SendCommandPolicy.FAILED,
+            message = "已过期未执行",
+            timestamp = System.currentTimeMillis()
+        )), group
+    )
+
     suspend fun publishPing() {
         if (client()?.isConnected != true || session.topic.isBlank() || session.password.isBlank()) {
             return
