@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">dSIM</string>
+    <string name="sms_remote_only_empty">暂无可代发的远端卡</string>
+    <string name="sms_local_retry_unavailable">本机卡或不可用卡不支持云端重试，请选择可用远端卡新建短信</string>
+    <string name="sms_remote_card_unavailable">远端卡不可用，不能发送或重试</string>
 </resources>

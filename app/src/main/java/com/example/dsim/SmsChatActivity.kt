@@ -49,6 +49,9 @@ class SmsChatActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_TARGET_UUID = "TARGET_UUID"
+
+        internal fun isSelectableSender(config: SimCardConfig?): Boolean =
+            config?.isActive == true && config.bindMode == "REMOTE_SHADOW"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -199,7 +202,7 @@ class SmsChatActivity : AppCompatActivity() {
                 activeSimConfigs = configs
                 refreshSenderPaletteMap(configs)
                 if (activeSimConfigs.isEmpty()) {
-                    Toast.makeText(this@SmsChatActivity, "没有可用号码，请先绑定", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SmsChatActivity, getString(R.string.sms_remote_only_empty), Toast.LENGTH_SHORT).show()
                     return@withContext
                 }
 
@@ -276,9 +279,8 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun sortSelectableConfigs(configs: List<SimCardConfig>): List<SimCardConfig> {
-        return configs.sortedWith(
+        return configs.filter { isSelectableSender(it) }.sortedWith(
             compareBy<SimCardConfig>(
-                { it.bindMode == "REMOTE_SHADOW" },
                 { it.alias.orEmpty() },
                 { it.slotIndex ?: Int.MAX_VALUE },
                 { it.phoneNumber }
@@ -314,6 +316,7 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun bindSelectedSenderButton(config: SimCardConfig?) {
+        btnSendSms.isEnabled = isSelectableSender(config)
         if (config == null) {
             val palette = SenderColorUtils.neutral
             btnSelectSim.text = "选择号码"
@@ -405,6 +408,12 @@ class SmsChatActivity : AppCompatActivity() {
                 val password = config.password
                 val topic = config.topic
                 val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
+                if (!isSelectableSender(dao.getSimConfigByKey(mappingKey))) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@SmsChatActivity, R.string.sms_remote_card_unavailable, Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
 
                 if (password.isBlank() || topic.isBlank()) {
                     withContext(Dispatchers.Main) {
@@ -467,6 +476,10 @@ class SmsChatActivity : AppCompatActivity() {
     }
 
     private fun retrySend(sms: SmsMessage) {
+        if (!isSelectableSender(configMap[sms.mappingKey])) {
+            Toast.makeText(this, R.string.sms_local_retry_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!UsageModeManager.canUseCloud(this)) {
             Toast.makeText(this, "本地模式已关闭云端重试发送", Toast.LENGTH_SHORT).show()
             return
@@ -495,8 +508,14 @@ class SmsChatActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
-                    .updateMessageStatus(sms.uuid, 0, null)
+                val dao = DsimDatabase.getDatabase(this@SmsChatActivity).dsimDao()
+                if (!isSelectableSender(dao.getSimConfigByKey(sms.mappingKey))) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@SmsChatActivity, R.string.sms_remote_card_unavailable, Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                dao.updateMessageStatus(sms.uuid, 0, null)
                 // Reuse UUID to query/recover a result; never bypass execution deduplication.
                 publishSendCommand(
                     uuid = sms.uuid,
@@ -520,7 +539,7 @@ class SmsChatActivity : AppCompatActivity() {
         }
     }
 
-    private fun publishSendCommand(
+    private suspend fun publishSendCommand(
         uuid: String,
         target: String,
         body: String,
@@ -528,6 +547,11 @@ class SmsChatActivity : AppCompatActivity() {
         password: String,
         topic: String
     ) {
+        // Recheck at the publication boundary too: selection/config/mode can change while IO runs.
+        check(UsageModeManager.canUseCloud(this) && isSelectableSender(
+            DsimDatabase.getDatabase(this).dsimDao().getSimConfigByKey(mappingKey))) {
+            getString(R.string.sms_remote_card_unavailable)
+        }
         val cmdJson = MqttPayloadCodec.encode(
             SendCmd(
                 target = target,
@@ -719,6 +743,14 @@ class SmsChatActivity : AppCompatActivity() {
         private fun bindSendStatus(holder: ViewHolder, sms: SmsMessage, palette: SenderColorPalette) {
             holder.tvChatStatus.visibility = View.VISIBLE
             holder.tvChatStatus.setOnClickListener(null)
+            holder.tvChatStatus.isClickable = false
+            holder.tvChatStatus.isEnabled = true
+            if (sms.status != 1 && !isSelectableSender(configMap[sms.mappingKey])) {
+                holder.tvChatStatus.setText(R.string.sms_local_retry_unavailable)
+                holder.tvChatStatus.setTextColor(Color.GRAY)
+                holder.tvChatStatus.isEnabled = false
+                return
+            }
             when (sms.status) {
                 0 -> {
                     holder.tvChatStatus.text = "发送中 · 查询结果"
