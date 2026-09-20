@@ -57,11 +57,12 @@ open class SmsReceiver : BroadcastReceiver() {
                 val receivingPhone = source.matchedConfig?.phoneNumber?.takeIf { it.isNotBlank() }.orEmpty()
                 PrivacyModeManager.rememberOwnPhone(context, receivingPhone)
 
+                // Match exact PDU time, not proximity: nearby identical texts can be distinct SMS.
                 // Keep the lookup and message/outbox write atomic across concurrent deliveries.
                 val (newSms, enqueued) = database.withTransaction {
                     val sms = dao.findSimilarLocalMessage(
                         deviceId, cleanAddress, body, 1, source.mappingKey,
-                        timestamp - 120_000L, timestamp + 120_000L
+                        timestamp, timestamp
                     ) ?: SmsMessage(
                         uuid = java.util.UUID.randomUUID().toString(),
                         address = cleanAddress,
@@ -74,7 +75,7 @@ open class SmsReceiver : BroadcastReceiver() {
                         iccid = null,
                         mappingKey = source.mappingKey
                     )
-                    // Reuse the row/UUID on a content hit; the existing outbox key is idempotent.
+                    // Reuse the row/UUID on an exact timestamp/content hit; the existing outbox key is idempotent.
                     sms to SyncOutbox.storeIncomingSms(context, sms, source.sourcePhoneNumber)
                 }
                 SystemSmsStore.insertIncomingIfNeeded(

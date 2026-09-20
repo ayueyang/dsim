@@ -7,7 +7,6 @@ import android.provider.Telephony
 object SystemSmsStore {
 
     private const val TAG = "dSIM_SystemSmsStore"
-    private const val DEDUPE_WINDOW_MS = 2 * 60 * 1000L
 
     fun insertIncomingIfNeeded(
         context: Context,
@@ -101,14 +100,13 @@ object SystemSmsStore {
             "${Telephony.Sms.ADDRESS} = ?",
             "${Telephony.Sms.BODY} = ?",
             "${Telephony.Sms.TYPE} = ?",
-            "${Telephony.Sms.DATE} BETWEEN ? AND ?"
+            "${Telephony.Sms.DATE} = ?"
         )
         val args = mutableListOf(
             address,
             body,
             type.toString(),
-            (timestamp - DEDUPE_WINDOW_MS).toString(),
-            (timestamp + DEDUPE_WINDOW_MS).toString()
+            timestamp.toString()
         )
 
         if (subscriptionId != null) {

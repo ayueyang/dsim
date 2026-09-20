@@ -29,7 +29,11 @@ import java.util.concurrent.atomic.AtomicInteger
 class IncomingSmsDedupTest {
     @get:Rule val permissions: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_SMS)
 
-    @Test fun repeatedPduReusesRowButDifferentBodyAndOutsideWindowDoNot() = runBlocking<Unit> {
+    @Test fun repeatedPduReusesRowButDifferentBodyAndOutsideWindowDoNot() = verifyDeliveries(180000L)
+
+    @Test fun sameContentFourSecondsApartRepresentsTwoMessages() = verifyDeliveries(4000L)
+
+    private fun verifyDeliveries(secondTimestampDelta: Long) = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertFalse("run on a fresh non-default app", DefaultSmsManager.isDefaultSmsApp(context))
         val database = DsimDatabase.getDatabase(context)
@@ -72,11 +76,11 @@ class IncomingSmsDedupTest {
             assertEquals("identical broadcast must not add a row", 1, duplicate.size)
             assertEquals(first.id, duplicate.single().id)
             assertEquals(first.uuid, duplicate.single().uuid)
-            deliver(marker, time + 180000)
-            assertEquals("outside two minutes must remain distinct", 2, dao.getAllSmsMessages().count { it.body == marker })
+            deliver(marker, time + secondTimestampDelta)
+            assertEquals("different PDU timestamps must remain distinct", 2, dao.getAllSmsMessages().count { it.body == marker })
             deliver(marker + "X", time)
             assertEquals("different content must remain distinct", 1, dao.getAllSmsMessages().count { it.body == marker + "X" })
-            android.util.Log.i("dSIM_BatchA", "SMS_REDELIVERY samePdu rows=1 uuidStable=true; outsideWindow=2; differentBody=1")
+            android.util.Log.i("dSIM_BatchA", "SMS_REDELIVERY samePdu rows=1 uuidStable=true; differentTimestampDelta=$secondTimestampDelta rows=2; differentBody=1")
         } finally {
             context.unregisterReceiver(receiver)
             database.invalidationTracker.removeObserver(observer)
