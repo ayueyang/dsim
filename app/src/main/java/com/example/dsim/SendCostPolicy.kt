@@ -26,8 +26,8 @@ object SendCostPolicy {
 
     /**
      * True when executing a command of [requestedParts] segments would push today's total past
-     * [limit]. Segments already committed (PENDING / UNKNOWN / SENT) all count: PENDING and UNKNOWN
-     * may well have been billed, and only the carrier knows.
+     * [limit]. Reservations/submitted segments in ALL states count, including FAILED: one failed part
+     * does not undo successful parts, and even failed callbacks do not prove zero carrier charge.
      */
     fun isOverLimit(segmentsToday: Int, requestedParts: Int, limit: Int): Boolean {
         if (limit <= UNLIMITED) return false

@@ -15,8 +15,11 @@ interface DsimDao {
     @Query("SELECT * FROM send_commands WHERE uuid = :uuid")
     suspend fun getSendCommand(uuid: String): SendCommandRecord?
 
-    /** Segments this device committed to the carrier since [since]; FAILED rows were never billed. */
-    @Query("SELECT COALESCE(SUM(partCount), 0) FROM send_commands WHERE createdAt >= :since AND state != 'FAILED'")
+    /** Conservative reserved/submitted segments since [since], including FAILED multipart sends.
+     * A failed callback does not prove zero charge; completedParts records callbacks, not successes.
+     * Retain the full reservation even after failure/unknown outcome to avoid undercounting costs.
+     */
+    @Query("SELECT COALESCE(SUM(partCount), 0) FROM send_commands WHERE createdAt >= :since")
     suspend fun sumSendSegmentsSince(since: Long): Int
 
     @androidx.room.Update

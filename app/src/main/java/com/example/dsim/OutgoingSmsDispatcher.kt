@@ -66,15 +66,7 @@ object OutgoingSmsDispatcher {
         val manager = smsManager(context, subscription)
         val parts = manager.divideMessage(body)
         requireSendCommand(parts.isNotEmpty()) { "短信内容为空" }
-        // Cost guard: a new command only. Re-queries of an existing UUID returned above and are free.
         val limit = CloudSettingsManager.getRemoteSendDailyLimit(context)
-        if (limit > SendCostPolicy.UNLIMITED) {
-            val today = dao.sumSendSegmentsSince(SendCostPolicy.startOfDay(System.currentTimeMillis()))
-            if (SendCostPolicy.isOverLimit(today, parts.size, limit)) {
-                DsimLog.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${parts.size})")
-                throw SendCommandRejectedException(SendCostPolicy.overLimitMessage(limit))
-            }
-        }
         val record = SendCommandRecord(
             uuid = uuid, requestFingerprint = identity, groupFingerprint = group,
             requesterDeviceId = requesterDeviceId, address = target, body = body,
@@ -94,19 +86,7 @@ object OutgoingSmsDispatcher {
             PendingIntent.getBroadcast(context, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         })
-        val claimed = database.withTransaction {
-            if (dao.claimSendCommand(record) == -1L) false else {
-                val sms = dao.getMessageByUuid(uuid)
-                if (sms == null) dao.insertMessage(toSms(record))
-                else {
-                    requireSendCommand(sms.type == 2 && sms.address == target && sms.body == body &&
-                        sms.mappingKey == config.mappingKey) { "短信 UUID 内容冲突" }
-                    dao.updateSentMessageAfterSend(uuid, record.createdAt, 0,
-                        record.deviceId, subscription ?: -1, null, config.mappingKey, null)
-                }
-                true
-            }
-        }
+        val claimed = reserveCommand(database, record, limit)
         if (!claimed) {
             // Another coroutine owns submission. Query outcome only; never enter the API below.
             dao.getSendCommand(uuid)?.takeIf { it.requestFingerprint == identity }
@@ -133,6 +113,31 @@ object OutgoingSmsDispatcher {
             DsimLog.w(TAG, "SMS submission needs confirmation", e)
             publishOutcome(context, outcome)
         }
+    }
+
+    /** The ledger row is the segment reservation. No carrier call happens inside this transaction. */
+    internal suspend fun reserveCommand(
+        database: DsimDatabase, prepared: SendCommandRecord, limit: Int
+    ): Boolean = database.withTransaction {
+        val dao = database.dsimDao()
+        // Recheck under the same write transaction: racing duplicates must not pay twice or
+        // be rejected merely because the original command filled today's quota.
+        if (dao.getSendCommand(prepared.uuid) != null) return@withTransaction false
+        val record = prepared.copy(createdAt = System.currentTimeMillis())
+        val today = dao.sumSendSegmentsSince(SendCostPolicy.startOfDay(record.createdAt))
+        if (SendCostPolicy.isOverLimit(today, record.partCount, limit)) {
+            DsimLog.w(TAG, "Rejected SEND_CMD: daily segment limit $limit reached (today=$today, requested=${record.partCount})")
+            throw SendCommandRejectedException(SendCostPolicy.overLimitMessage(limit))
+        }
+        if (dao.claimSendCommand(record) == -1L) return@withTransaction false
+        val sms = dao.getMessageByUuid(record.uuid)
+        if (sms == null) dao.insertMessage(toSms(record)) else {
+            requireSendCommand(sms.type == 2 && sms.address == record.address && sms.body == record.body &&
+                sms.mappingKey == record.mappingKey) { "短信 UUID 内容冲突" }
+            dao.updateSentMessageAfterSend(record.uuid, record.createdAt, 0,
+                record.deviceId, record.subscriptionId ?: -1, null, record.mappingKey, null)
+        }
+        true
     }
 
     suspend fun onSentResult(context: Context, uuid: String, part: Int, resultCode: Int): SendCommandRecord? {
