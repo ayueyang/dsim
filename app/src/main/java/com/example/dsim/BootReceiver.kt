@@ -7,7 +7,7 @@ import androidx.core.content.ContextCompat
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             if (!OnboardingStateStore.isAntiFraudAcknowledged(context)) {
                 return
             }
@@ -30,7 +30,11 @@ class BootReceiver : BroadcastReceiver() {
                     putExtra("MQTT_TOPIC", topic)
                     putExtra("MQTT_PASSWORD", password)
                 }
-                ContextCompat.startForegroundService(context, serviceIntent)
+                try {
+                    ContextCompat.startForegroundService(context, serviceIntent)
+                } catch (e: Exception) {
+                    DsimLog.w("dSIM_Boot", "Could not start sync service at boot; open the app to retry", e)
+                }
             }
         }
     }
