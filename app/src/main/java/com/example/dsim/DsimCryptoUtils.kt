@@ -108,16 +108,6 @@ object DsimCryptoUtils {
         return open(combined, secret)?.let { String(it, Charsets.UTF_8) }
     }
 
-    /** 判断一段 Base64 报文是否以本格式魔数开头（不解密）。 */
-    fun hasKnownMagic(ciphertextBase64: String): Boolean {
-        val head = try {
-            Base64.decode(ciphertextBase64.take(8), Base64.NO_WRAP)
-        } catch (_: IllegalArgumentException) {
-            return false
-        }
-        return head.size >= magicBytes.size && magicBytes.indices.all { head[it] == magicBytes[it] }
-    }
-
     /** 字节级加密，供单测直接调用（不依赖 android.util.Base64）。 */
     @WorkerThread
     internal fun seal(plaintext: ByteArray, secret: String): ByteArray {
