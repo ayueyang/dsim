@@ -25,7 +25,6 @@ object SystemSmsHistoryImporter {
     private const val KEY_REACHED_END = "REACHED_END"
     private const val KEY_IMPORT_VERSION = "IMPORT_VERSION"
 
-    private const val APP_DEDUPE_WINDOW_MS = 2 * 60 * 1000L
     private const val HISTORY_ACK_TIMEOUT_MS = 20_000L
     private const val CURRENT_IMPORT_VERSION = 2
 
@@ -308,8 +307,10 @@ object SystemSmsHistoryImporter {
                     body = body,
                     type = type,
                     mappingKey = source.mappingKey,
-                    startTimestamp = marker.timestamp - APP_DEDUPE_WINDOW_MS,
-                    endTimestamp = marker.timestamp + APP_DEDUPE_WINDOW_MS
+                    // Distinct provider dates are distinct messages, even with identical text.
+                    // Prefer preserving a possible PDU/provider-date duplicate over silent loss.
+                    startTimestamp = marker.timestamp,
+                    endTimestamp = marker.timestamp
                 )
                 var sms = existingSms
 
