@@ -105,6 +105,14 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 
 这是已知且有意保留的可用性取舍，不表示“有界重投已实现”。本轮按用户指令仅记录；实现有界隔离/持久留存/可见故障前必须再取得批准。**不得只因达到 K 次就 ack 或升级永久拒绝来腾窗口**，否则可能在没有可靠保留消息时违背“不丢数据”的裁决。未来方案须明确持久保存成功后才能释放投递、恢复/重放入口、容量及满盘行为。
 
+### 发送与判重补充约束（2026-09-20 批次 A 返工 / B）
+
+- T3.4：采集端 Room、默认短信应用的系统库写入、历史导入都只用**精确来源时间戳**与原有来源/内容条件匹配。禁止恢复“内容相同且±2分钟”的误并启发式。默认外的 provider DATE 可能不同于 PDU 时间，此时宁可保留疑似重复，不静默吞掉真实短信；同来源/内容/PDU时间完全相同的真短信仍是该身份策略的限制。
+- T2.2：成功处理发送结果时，账本、短信状态、`SEND_CMD_RESULT` 和 `sent:<state>` 的 `SMS_SYNC` 必须先同事务提交，再结束广播处理并触发 flush；重复终态回调须补齐缺失队列行。系统短信库写入在事务外补偿。Android `PendingResult` 的生命周期结束不是 MQTT PUBACK，提交前持续数据库故障/进程死亡不能据此推断回调会自动重投。
+- T2.3：聊天选择器、发送与 retry 只允许 active `REMOTE_SHADOW`，历史本机卡重试须禁用并解释原因；不能为了本机卡发送而删除自身 topic 回声过滤。
+- F4：拒绝回调必须可挂起、返回 outcome。仅已解码 `SendCmd` 的 STALE，且非空 uuid/requester 与 topic sender 一致、目标本机卡有效、云端模式/session/当前组满足条件时，才在**先检查执行账本为 null**的同一事务中持久化 `FAILED/已过期未执行`，使用 `expired` discriminator。已有任何账本状态都不覆盖；不创建执行账本、不调用运营商。入队失败不 ACK、取消 rethrow，拒绝的 nonce 不消费。无业务副作用的协议/隐私拒绝仍按 C24/C7 处理。
+- C22 的年龄窗口应按现有 `ReplayGuard.Policy.forMessage` 判读：短寿命控制（包括 SEND_CMD）10分钟，OFFLINE 24小时；SMS_SYNC / SEND_CMD_RESULT / HISTORY_SYNC_ACK 是持久数据，不因年龄淘汰，但仍校验信封与 nonce。此处是既有策略的文档澄清，不改变已验收的 ReplayGuard 或协议。
+
 ## 5. 文件树
 
 ```
