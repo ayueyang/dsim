@@ -112,3 +112,13 @@
 - 可选raw-PDU注入第一次OK却无Room标记/相应radio观察，第二次未执行，原因未确定；不作为成功证据、不扩展诊断。onboarding脚本exit0不等于完成UI：顶部SimBinding、完成标记缺失，只认定采集所需配置有效。
 - 最后保护74文件SHA256一致；Manifest只删locked boot，Phase2/硬件已修主代码均未动，UTF8/BOM0/CRLF0/尾LF及树74通过。
 - 三台测试AVD均停，5558系统SMS由原1条变3条合成fixture，app/test卸载；重启确认Google Messages默认恢复后再停。旧5554/5556未改。原有脏/未跟踪项继续保留，不push、不进批次B。
+
+## 批次A返工/B起点
+- dd5a114 ahead8/behind0；审查来源已读，最新用户允许连续执行全部任务，仍禁止push。新保护快照batchB-protected-baseline.json共41文件（本轮既有脏/未跟踪文件+明确不改的不变量源码）；审查账本只读。
+- 纠正上轮结论：相隔3.65秒真实双SMS_DELIVER仅一行是静默丢信反例，不能作为成功验收。Room及SystemSmsStore都要消除±2min近似窗口。
+- 时间戳等值按本轮要求实现，但GSM秒精度无法保证不同真实短信永不碰撞；不宣称是绝对唯一PDU身份。
+- T2.1计划假设completedParts能区分成功段不成立：它仅记录已回调段号，hasFailedPart只有一个汇总位。采用保守partCount预留/已提交段数，FAILED不释放；不增schema，不推断真实账单。
+
+### Phase29续作发现
+- 双机驱动的安全前提必须实测REMOTE_SEND_ALLOWED=false，缺键默认true，不能据注释假设禁用。旧t23失败与PENDING不算通过。
+- 当前QoS1只验证这一轮一次发布及终态收敛，不保证PUBACK和删除之间崩溃时全局exactly-once。合成callback/离线handler注入与真实MQTT入口必须分别报告。

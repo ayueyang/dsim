@@ -126,3 +126,33 @@
 - 清理本轮tmp_dbpull/emulator-5558；新5560/5562停机保留，app/test被UTP卸载。5558卸载当前app后立即查询角色曾仍显示dSIM；重启复核session-9a966a2ad166fdd5ab2040c5 exit0，系统已恢复Google Messages，未手工赋权，三条合成SMS保留，再次停机。旧5554/5556未改。
 - 保护74文件逐一SHA256一致；Manifest对基线只有locked-boot删除，Phase2出站/结果/outbox/ACK代码未动；源文档UTF8/BOM0/CRLF0/尾LF，git diff --check与树74通过。
 - FIXES追加逐项文件/diff/命令/真实输出、失败与边界；只更新原stage1三账本。六项各自提交+低API独立测试提交，收尾文档另commit；无push，批次A完成停下。
+
+## Session: 批次A返工与批次B（2026-09-20）
+- 起点dd5a114/0behind8ahead；task tsk_2f4ca92ab1929e9b；原计划目录不变，审查源与指定章节已读；41受保护文件快照保存仓库外。
+- 新增相差4秒仪器用例，保留同PDU/id/uuid断言；生产尚未修改。首轮外部driver传-P参数未加引号，PowerShell拆分为-Pandroid与.test...，Gradle任务选择失败，未执行测试。自动复制的26例为之前审查遗留报告，**不算本轮红绿/基线证据**。修参数引用并加报告mtime新鲜度检查后强制重跑lint与目标仪器，保留原失败日志。
+
+- T3.4有效红灯：batchB-dedup-red-retry，2例中4秒反例expected2/actual1，旧同PDU例通过；独立lint实际5/313/NewApi0。修两路径+F11后新装27/27、JVM113，lint5/312/NewApi0，仅移除UnsafeProtectedBroadcastReceiver；Gradle组合exit1仅由存量lint错误导致，connected正常完成。1281bfd/469c788分别提交。
+- T2.1 b4d3d4d：并发最后一段仅1个claim，失败multipart计2段而非退费，重复UUID免费、冲突回滚、认领日计费，共5仪器通过；compile/JVM/connected成功1m9s。
+- T2.2 83bbc06：第二outbox写失败触发器使账本/短信/两队列全部回滚；重复回调分别补齐缺行、部分失败/隐私/换组/无效段号/重开DB，共6仪器通过，1m8s。实际进程死亡与双机恢复留最终回归。
+- T2.3 88da47e：仅active REMOTE_SHADOW可选，发送/重试/最终publish守卫均加；新装2例首次发现setOnClickListener(null)不会清除clickable标志，显式false后2/2通过1m14s。提交前发现strings.xml原本无尾LF，本轮补齐后编码检查通过。
+- F4先加测试，生产未改：JVM114中拒绝副作用Retryable被吞的新增例红灯；connected未启动，因为5562启动命令的30分钟timeout已触发，不算设备用例结果。已确认managed emulator session timeout，原数据保留，重启同AVD并将会话时限设4小时，重跑6设备负测。
+- 另发现SystemSmsHistoryImporter第三处±2min误并风险，已向用户说明，将按同源P1补等值判重与系统库双fixture红绿；同时披露非默认应用provider时间/PDU时间不一致时宁可保留疑似重复，不用窗口吞信。
+
+- F4有效设备红灯6例3失败；首次绿灯编译因误用CloudConfig.isConfigured失败（无新测试结果），改为检查broker/topic/password后6/6、JVM115/115通过1m22s，3ac782a独立提交。
+- 历史导入实provider双fixture（modem间隔4秒）1例红灯expected2actual1，改精确provider DATE后1/1且重复导入id/uuid稳定，49a695d独立提交；未用adopted-shell插入假设。
+- 首次全量最终新装47/47、0失败/错误/跳过，case逐条列出；lint实际5errors/312warnings/NewApi0，组合exit1唯一失败任务lintDebug（存量错误）。unit在这一全量轮UP-TO-DATE，不冒充新测，115/115使用前一轮新鲜记录。
+- 为双机离线收敛补F4显式opt-in测试分支，不改生产、不发运营商短信；再次全量connected并单任务--rerun强制JVM正在执行。
+- 新peer首次冷启动未完成时onboard安装失败，已保存失败日志；等待sys.boot_completed=1后重试真实UI引导，尚未据脚本exit0认定引导完成。
+
+- 第二次新装全量 batchB-full-live-probe：47/47、0失败/错误/跳过，BUILD SUCCESSFUL 3m57s exit0；JVM单任务--rerun实际115/115。逐例XML与源码集合完全相等47，保护43文件哈希无差异（batchB-full-case-protection-audit.log）。F4新增f4LiveUuid/f4Requester opt-in离线双机探针已编译/常规套件通过，尚待现场分支运行、未提交。
+- 独立接收端5564首次冷启动完成后重跑引导，但脚本exit0时仍未HAS_SEEN_ONBOARDING；再次确认SMS role已变com.example.dsim，并从实际步骤6点击“进入dSIM”，确认HAS_SEEN_ONBOARDING=true、BIDIRECTIONAL_SYNC、AUTO_CONNECT=true，已安装最终test APK。
+- 执行端改用5562（API28）与5564配对，不启动/不改5558，5554/5556也未干预。5562通过真实系统ACTION_CHANGE_DEFAULT对话框获默认SMS；真实UI配置脚本结束，但完成标记仍缺，补走导引。首次显式启动非导出OnboardingActivity被拒（安全边界正常），外部脚本改为从导出的SmsListActivity冷启动、自动路由引导，不改manifest/产品可见性。
+- 外部双机驱动batchB-live-driver.py已落地（preflight/t34/t23/f4-wire/f4-offline/t22），尚未执行实际验收。使用合成lab组和号码、不调用运营商发送；T22将真实kill于生产onSentResult提交后，不能冒充真实运营商回调。
+
+## Phase 29 收尾续作（2026-09-20，本轮起点49a695d）
+
+- 已读三件账本、批次A审查、裁决、T2.1–T2.3及F4提案；PLAN_ID固定stage1，不创建新计划。原43项保护哈希一致；本轮仓库外phase29-resume-protected.json新增286文件保护快照，涵盖除6个负责文件外的跟踪/未跟踪项。
+- 在途F4探针保留：debug显式opt-in、两次拒绝只留一个expired队列、不建执行账本；默认47例分支不变。AGENTS/TESTING为完整约束与历史证据说明，保留并分别提交；三件账本独立归档。
+- 发现交接漏记：旧batchB-live-all.log已运行t34通过、t23失败（90秒等待超时）；旧驱动后加REMOTE_SEND_ALLOWED=false前置，历史曾产生PENDING认领。本轮不把旧输出算新证据，不批准运营商发送。驱动实际位于AgentDock/dsim-stage1-evidence/而非AgentDock根目录。
+- 本轮preflight首次因5564未显式关闭代发失败，尚未发布探针；5562已false。通过真实设置UI将5564开关true改false并读取prefs确认；未直写prefs。第一次UI驱动未识别设置页顶部，修正外部驱动后成功。
+- 编译首轮重复传--console而失败（Gradle未构建）；去重后compileDebugKotlin/compileDebugAndroidTestKotlin BUILD SUCCESSFUL in24s，29项UP-TO-DATE，明确不是重新执行测试。HTTP524后从远端真实日志确认完成，未重复误报。现场六段正在新跑，Phase29不提前标complete。
