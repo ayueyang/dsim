@@ -283,3 +283,8 @@ bash scripts/emu-down.sh                                         # 收工
 至少执行一次 `./gradlew :app:compileDebugKotlin`；涉及采集/同步逻辑时再跑一遍 `verify-dsim.sh`。
 
 **每轮回归必须包含 `:app:connectedDebugAndroidTest`，且该轮至少一次在全新安装或清数据的设备上执行**（多设备在线时用 `ANDROID_SERIAL` 指定单台）：仪器测试存在运行期权限、系统短信等设备状态依赖，不能只凭已授权设备的历史绿灯或 JVM 单测替代（F-6）。
+
+两条配套判读规则（F-9/F-10，2026-09-20 复核补充）：
+
+1. **权限类用例的绿灯只在该轮设备为新装/清数据时才可信**：`GrantPermissionRule` 授予的运行期权限**测试结束后不撤销**，同一设备上第二轮及以后可能靠上一轮遗留的授权通过，从而掩盖"忘了声明权限"这类缺陷。
+2. **新装设备上的判定标准是 `0 failed`，允许个别 `skipped`**：`DeviceIdentityTest` 的身份导入用例以系统短信库（`content://sms`）为 fixture，库为空时按设计 `Assume` 跳过。需要它实际执行时，按 `TESTING.md` §5.8 播种系统短信。
