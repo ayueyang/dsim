@@ -4,10 +4,10 @@
 仅按 `修复计划_2026-09-19.md` 阶段 1 执行 T1.1–T1.5：每项一个独立 conventional commit、每项跑对应验收并保留真实输出，阶段末跑全量回归，然后停下等用户批准才进阶段 2。
 
 ## Next Step
-本轮F-9/F-10独立复核完成：文档修正00b994d，空库19通过/1跳过与播种后新装20通过均已实测；无产品/正式测试变更。更新本账本后停下，阶段0/1保持关闭。不push，不自行启动任务二或计数异常排查；任何候选逐项先获用户批准。
+批次A已完成并停止：只待用户审查及另行批准push/批次B，不自行开始阶段2/4/5/6。阶段0/1维持关闭。
 
 ## Current Phase
-Phase 17 — complete
+Phase 23 — complete
 
 ## Phases
 
@@ -136,3 +136,18 @@ Phase 17 — complete
 - 空库控制台21/20 completed / Finished21，与XML20节点、textproto19PASSED+1IGNORED不一致；原始证据已存。采用用例级结果，未假称20全过；计数原因尚未验证，另行批准才排查runner/UTP。
 - 新AVD启动器的内部adb -e报multiple emulators；本轮管理/测试均显式5558，两轮Gradle均成功；不为了消除辅助警告而动旧设备。
 - 所有临时源与驱动仅保留仓库外证据副本。新AVD当前有1条合成fixture；若再次测空库，必须新建或重置这台专用AVD，不能复用其当前数据冒称为空。
+
+## 批次 A（裁决_2026-09-20，起点e51a92f，ahead0）
+- Phase18 T3.1/T3.2 删除死代码：complete；7c00b72/b07da50，零引用、编译绿、JVM113。
+- Phase19 T3.3 BootReceiver保护/死过滤器：complete；dcd4275，API28异常拒绝/locked-boot仪器1/1。
+- Phase20 T3.4 内容判重/真实重投：complete；929f088，原Receiver同PDU重投修前2行、修后1行，窗口外/正文不同不合并。
+- Phase21 T3.5注释与T3.6占位日志：complete；3c881f0/7d3352c，XML排除项不变、树74、API24三占位日志断言1/1。
+- Phase22 低API与回归：complete；5d2e600；API24定向3/3、API28新装全套26/26（逐个case对源码，无skip/error/failure）、JVM113/113；verify8/8、真实双SMS_DELIVER仅一行。
+- Phase23 保护范围/证据/账本收尾：complete；74文件SHA一致，编码/树/范围检查通过，三台测试AVD均停机保留；无push，停止等批次B批准。
+
+### 批次A失败与边界
+- T3.4 harness非void首次失败已修；随后才取得真实expected1/actual2负测，再修产品后绿灯。
+- API28 shell无READ_SMS曾被driver误算空库，Gradle尚未启动；修外部driver后原规则读回system1、import1/0、rows1→1，全套26/26无skip。
+- 可选raw-PDU实验未形成可观察投递，第二次未执行；不报通过。永久同PDU别名测试+真实双SMS_DELIVER均证实单行；完整onboarding不在已验收结论内。
+- API24只定向3例与另1组件例，不冒称全套；计费注释留T2.1。其余未覆盖/命令/证据见FIXES批次A节。
+- 最新裁决覆盖历史候选状态：D1–D5接受，UTP21/20结案不再追；W23/F2不做，F4仅下一批阶段2。

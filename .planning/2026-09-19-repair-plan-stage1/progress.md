@@ -100,3 +100,29 @@
 - 原始空库与播种后XML/textproto/runner日志均已另存C:/Users/admin/AgentDock/dsim-stage1-evidence；原空库报告在第二轮覆盖build目录前保存。f9f10-doc-commit-check.log保存提交前编码/范围/树及关停后设备列表。
 - 未执行/待批准：所有任务二候选、push、D1–D5、W23、F4过期SEND_CMD；本轮不重跑无关JVM/lint、未修五条既有lint错误。新发现UTP控制台计数不一致仅记录，是否独立排查待用户批准。
 - 本轮文档提交后ahead24/behind0；本三件账本另行收尾提交，最终状态以末次git核验为准。阶段0/1维持关闭，本轮结束停下。
+
+## Session: 批次 A（2026-09-20）
+- MCP task tsk_26c0ce14de08e11c；PLAN_ID固定原stage1；无新计划目录。
+- 已读取AGENTS/权威裁决/修复计划阶段3/F6-F8背景/FIXES/三账本；SDK低API下载session-5320b15c5485c7c43e65fd4f并行进行。
+
+- T3.1 7c00b72：compile45s成功；源码getRecentConversationsFlow零匹配。T3.2 b07da50：compile+JVM55s成功，XML113/0/0/0，hasKnownMagic零匹配。
+- T3.3 dcd4275：API28定向connected1/1，BUILD SUCCESSFUL3m32s；异常模拟IllegalState/Security受控，locked-boot忽略。
+- T3.4 929f088：首跑harness返回非void失败（1m2s）；修harness后真实重复行失败（56s，expected1/actual2）；产品修复后XML1/1且窗口边界断言通过（1m6s）。
+- T3.5 3c881f0：compile32s、树74/exit0、backup XML排除元素完全相同，版本目录不存在属实；计费注释未改。
+- T3.6 7d3352c：API24定向connected1/1，2m21s；三个真实入口日志断言通过，三文件尾LF。
+- 低API：新增AVD API24/5560（Android7.0/NYC/6696031）、API28/5562（Android9/PSR1.180720.122/6736742），无覆写旧AVD；nonce/真QoS1 publish和两守卫专门仪器3例开始运行。
+- 另启动裁决保留的5558，作为API36真实采集verify-dsim设备；其有历史合成fixture，不称空库。仅新测试配置，口令运行时生成经DSIM_TEST_PASSWORD传入，不入源码/日志。
+
+- API24核心运行证据已取得：PlatformCompatibilityTest XML3/3，2m6s；nonce16字符/12字节、真实QoS1 PUBACK、DSM3回环一致；legacy_getSimState()返回slot0，legacy_activeSlotInfo解析subscription1。原始runner/XML/textproto已归档；API24应用由UTP卸载，专用AVD已停机保留。
+- API28全套首次前置脚本失败，尚未启动Gradle：shell读取content://sms被READ_SMS拒绝，脚本错误地把无Row输出算0后报fixture未入库；这个结论无效。emu注入已OK，未用root/手工授权绕过；修订外部driver，改由原DeviceIdentityTest自带READ_SMS规则实际读回/明确跳过，全套重跑中。
+
+### 批次A最终回归与停机收尾
+- API28 retry session-72e7aadeb50d74e75bc155b6 exit0，BUILD SUCCESSFUL3m11s；XML26/0/0/0，与源码26逐个case一致；historyImport实际first1/second0/rows1→1/system1，非fixture跳过。XML/runner/textproto在覆盖前归档。
+- API28 runner：SUBSCRIPTION_GUARD legacy_activeSlotInfo slot0 resolved1；SIM_STATE_GUARD getSimState(slot) ready=true slots1；NONCE_QOS1_PUBLISH nonceChars16 nonceBytes12 puback=true DSM3_roundtrip=true。
+- 5d2e600提交PlatformCompatibilityTest三例与TESTING §5.9；最终JVM113/0/0/0、17XML逐份另存读回一致。未改生产低API代码，未用JVM代替设备证明。
+- API36 verify session-1f454b738c2e73195e15dcc7 exit0/460993ms，PASS8 FAIL0；真实SMS_DELIVER/Room/通知/FG。onboarding仍在SimBinding，不声明完整onboarding通过。
+- 可选raw-PDU session-538a47f42d1a902136dc19a7 exit1：第一次注入OK但Room标记0，无第二次；原始日志/快照保留，根因未验证。
+- 补充标准emu sms send两次：session-d5386e87d51f87f17aeb65ad exit0；02:43:01与02:43:05两条生产SMS_DELIVER，同正文仅Room id2一行；REAL_SMS_DELIVERY_COUNT=2、TWO_REAL_BROADCASTS_ONE_ROOM_ROW=True。
+- 清理本轮tmp_dbpull/emulator-5558；新5560/5562停机保留，app/test被UTP卸载。5558卸载当前app后立即查询角色曾仍显示dSIM；重启复核session-9a966a2ad166fdd5ab2040c5 exit0，系统已恢复Google Messages，未手工赋权，三条合成SMS保留，再次停机。旧5554/5556未改。
+- 保护74文件逐一SHA256一致；Manifest对基线只有locked-boot删除，Phase2出站/结果/outbox/ACK代码未动；源文档UTF8/BOM0/CRLF0/尾LF，git diff --check与树74通过。
+- FIXES追加逐项文件/diff/命令/真实输出、失败与边界；只更新原stage1三账本。六项各自提交+低API独立测试提交，收尾文档另commit；无push，批次A完成停下。

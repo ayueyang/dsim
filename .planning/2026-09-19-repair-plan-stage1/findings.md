@@ -93,3 +93,22 @@
 - 文档00b994d：AGENTS §8.3将0failed收紧为任务成功/用例齐全/0failure+error/解释可接受skip；fixture缺失允许跳过，但不能据此验收去重覆盖。TESTING §5.8与FIXES补测量、命令、归属与限制。
 - 新发现未解决：空库控制台21/20，而XML/textproto一致为20；原因尚未验证，未扩展改runner/UTP。播种后回归Finished20。逐条证据位于C:/Users/admin/AgentDock/dsim-stage1-evidence/f9f10-*。
 - 无法验证范围：以上adopt结论不能外推未测Android版本、root/特权应用/不同AppOps；这些不是当前任务已授权工作。未运行任务二中的低API/双机同进程E2E/release/UI或阶段2/3修改。
+
+## 批次 A 起点
+- 权威裁决已读：D1-D5接受、W23不做、F2不做、F4留批次B、UTP21/20为报表伪影已结案，不继续追runner。存量lint不修。
+- e51a92f与origin一致0/0；现有5554/5556在线，最低已装镜像36.1。启动SDK24+28 google_apis/x86_64下载，不用lint替代运行验证。
+- 原脏项/审查文档/不变量文件74条独立SHA256基线保存仓库外batchA-protected-baseline.json。
+
+- T3.4 修前负面确证：同一PDU通过测试专用广播action别名进入真实SmsReceiver/goAsync，XML失败expected1/actual2。修后复用findSimilarLocalMessage ±120000ms，lookup+store同Room事务，复用id/uuid；原断言通过，窗口外及不同正文仍独立。不调整生产受保护广播过滤器/权限。
+- 新增IncomingSmsDedupTest首跑初始化错误（runBlocking推断返回Int，JUnit要求void）；改runBlocking<Unit>后重跑才得到上述产品缺陷复现。此harness失败与产品失败分别留档。
+- T3.5 按计划将计费注释留到T2.1，不提前改费用语义；补AGENTS实际加密入口encryptOrNull及不写死套件20例，避免新增测试后再次漂移。
+- T3.6 仅三个入口显式警告，headless新增onStartCommand后仍委托super；无MMS/编辑/发信功能实现，不删默认SMS必需组件。
+
+## 批次A最终发现与结论
+- 低API并非静态推测：API24 nonce16chars/12bytes/PUBACK/DSM3一致，legacy_getSimState()与legacy_activeSlotInfo真实成功；API28 slot overload与旧订阅路径成功。5d2e600收永久3例和TESTING说明。单SIM/google_apis镜像结论，不泛化OEM/多卡。
+- API28源码期望26与XML26唯一case完全一致，MISSING/UNEXPECTED均空，failure/error/skip全0；历史导入first1/second0/rows1→1/system1。最终JVM17XML合计113全过。
+- 原API28外部driver把shell READ_SMS拒绝误读为0行，原fixture失败断言无效；没有提升shell权限，改用既有规则后实际全套通过。
+- 默认SMS入口真实验证：verify-dsim 8/8；两次emu sms send实际两条SMS_DELIVER日志，唯一标记正文Room仅id2一行。永久别名测试另证明同一PDU/id/uuid保持及窗口/正文边界。
+- 可选raw-PDU注入第一次OK却无Room标记/相应radio观察，第二次未执行，原因未确定；不作为成功证据、不扩展诊断。onboarding脚本exit0不等于完成UI：顶部SimBinding、完成标记缺失，只认定采集所需配置有效。
+- 最后保护74文件SHA256一致；Manifest只删locked boot，Phase2/硬件已修主代码均未动，UTF8/BOM0/CRLF0/尾LF及树74通过。
+- 三台测试AVD均停，5558系统SMS由原1条变3条合成fixture，app/test卸载；重启确认Google Messages默认恢复后再停。旧5554/5556未改。原有脏/未跟踪项继续保留，不push、不进批次B。
