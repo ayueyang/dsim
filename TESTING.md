@@ -545,3 +545,32 @@ API28普通 shell 缺 READ_SMS 的限制仍成立。实际权限回归使用 APK
 故障探针的预期 `Process crashed` 不能当作普通47例中的通过，也不能隐藏成零失败；故障试验仅在标记、持久四写、恢复后对端终态均测得后成立。“一次”指该轮队列/传输观测，不保证 PUBACK 与删除之间再崩溃时的全局 exactly-once。
 
 双机前先实际核实 HAS_SEEN_ONBOARDING=true、模式/默认短信角色、active本机卡、不同设备id及双向PONG。`onboard-device.sh` exit0不代表已经完成；本轮遇到停在绑定/完成页、非导出 Activity 不能从 shell 直接启动、熄屏空XML及按钮在屏外，均补走真实 UI，不能直写 prefs 冒充引导。
+
+
+### Phase 29 现场验收完成（2026-09-20，本轮新输出）
+
+执行设备为5562/API28与5564/API36，沿用已在线的专用AVD；本轮未启动或重启模拟器，未触碰5554/5556/5558。后续若启动仍须timeout_ms=14400000（4小时）。两端app/test安装包SHA256均与当前构建匹配，默认短信角色分别用API28 secure setting与API36 role manager核实。两端REMOTE_SEND_ALLOWED明确false；真实设置UI只将5564由默认true关闭，5562已false；保留安全关闭状态。
+
+驱动实际路径是 `C:/Users/admin/AgentDock/dsim-stage1-evidence/batchB-live-driver.py`。执行 `python <driver> preflight`，再用同目录 `batchB-live-all.py` 按序执行 `t34/t23/f4-wire/f4-offline/t22`。每段均有新随机TAG、实时PONG、独立MQTT观察器及各自trace.json/wire.json，不使用旧报告判通过。
+
+| 段 | 本轮真实输出摘要 | 证据目录（batchB-live/下） |
+|---|---|---|
+| preflight | 两端HAS_SEEN_ONBOARDING=true、BIDIRECTIONAL_SYNC、AUTO_CONNECT=true、REMOTE_SEND_ALLOWED=false；both_devices_answered_live_ping；PASS | BATCHB-preflight-acb162db48 |
+| t34 | A、B分别两次emu sms send相隔4s；delta_ms=4000；每组两侧各2个相同UUID集合、wire_count=2、provider两行；PASS | BATCHB-t34-21c14e950d |
+| t23 | 真实聊天按钮发布command_count=1；仅一个拒绝回执；请求端status=-1、执行账本无该UUID；仪器OK (1 test)；PASS | BATCHB-t23-7dbfbd9149 |
+| f4-wire | broker真实过期SEND_CMD入口；请求端0→-1，FAILED/已过期未执行，回执1、执行账本0、对应outbox排空；PASS | BATCHB-f4-wire-7c334ba888 |
+| f4-offline | 执行端wifi/data=0，F4_OFFLINE_DURABLE、OK (1 test)；expired回执队列1、peer_status=0、账本0；恢复后回执1、peer=-1、队列0；PASS | BATCHB-f4-offline-c37555e096 |
+| t22 | T22_COMMITTED_BEFORE_PROCESS_DEATH后Process crashed；实际读回SENT/completedParts=0、短信status=1、两条outbox，peer仍0；重启T22_RESUMED_OUTBOX_DRAINED=True/OK (1 test)，peer=1、result_count=1、sent_sync_count=1；PASS | BATCHB-t22-19e36c8de1 |
+
+补充 `adb -s emulator-5564 shell am instrument -w -r -e class com.example.dsim.RemoteSenderUiTest#selectorHidesLocalAndInactiveCardsAndLocalRetryIsDisabled com.example.dsim.test/androidx.test.runner.AndroidJUnitRunner`：`Time: 6.364 / OK (1 test)`。真实ActivityScenario断言仅active REMOTE_SHADOW、隐藏local/inactive、本机重试isEnabled/isClickable=false，强制调用retry后短信仍-1。源码核对SmsChatActivity选择器282、发送411、retry479/512、最终publish551均保留守卫；最终publish守卫本轮为源码核查，不冒称专门故障注入。
+
+本轮额外强制JVM：`bash batchA-gradle.sh :app:testDebugUnitTest --rerun` → `BUILD SUCCESSFUL in 39s / 27 actionable tasks: 1 executed, 26 up-to-date`；新归档XML `tests=115 failures=0 errors=0 skipped=0`。归档驱动输出 `NO_FRESH_TEST_RESULTS outputs/androidTest-results/connected/debug`，如实表示本次没有新跑全量connected。上一轮已验收的新装47/47与lint5/312/NewApi0仍仅作为上一轮证据，未复制冒充本轮结果。
+
+### 证据边界与方案异议
+
+- F4离线期间无法从broker即时入站，所以该段使用合成SMS_SYNC预置请求端0、离线直调生产解密/判拒handler两次，再经真实MQTT回执收敛；真实入站topic由独立f4-wire覆盖。入outbox的是过期指令的失败回执，不是再次执行SEND_CMD。
+- T2.2是真实killProcess与重启/数据库持久性，但callback为合成输入直调生产onSentResult，不是运营商实际发送或真实sent广播。预期Process crashed作为故障切点保留，绝不计作普通套件零失败。
+- 本轮“只发布一次”是独立见证与队列的这轮观测，不代表QoS1跨PUBACK/删除崩溃窗口的全局exactly-once保证。
+- 既有T2.1对原方案的修正仍成立：completedParts不能推导每段成功数；采用partCount保守额度上界，FAILED不退款；不增schema。时间戳等值也不是绝对PDU唯一身份（秒精度碰撞可能），优于±2min静默吞信但有已记录边界。
+
+原始汇总：`phase29-resume-preflight-retry.log`、`phase29-resume-live-all.log`、`phase29-resume-selector.log`、`phase29-resume-followup.log`、`phase29-resume-provenance.log`、`phase29-resume-jvm.log`，均位于仓库外证据根目录。六段全部完成，无本任务尚未完成的现场场景；上述运营商链路/精确一次保证不是本次验证结论。
