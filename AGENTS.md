@@ -286,5 +286,5 @@ bash scripts/emu-down.sh                                         # 收工
 
 两条配套判读规则（F-9/F-10，2026-09-20 复核补充）：
 
-1. **权限类用例的绿灯只在该轮设备为新装/清数据时才可信**：`GrantPermissionRule` 授予的运行期权限**测试结束后不撤销**，同一设备上第二轮及以后可能靠上一轮遗留的授权通过，从而掩盖"忘了声明权限"这类缺陷。
-2. **新装设备上的判定标准是 `0 failed`，允许个别 `skipped`**：`DeviceIdentityTest` 的身份导入用例以系统短信库（`content://sms`）为 fixture，库为空时按设计 `Assume` 跳过。需要它实际执行时，按 `TESTING.md` §5.8 播种系统短信。
+1. **验证权限声明是否自足，仍须该轮至少一次新装/清数据回归**：`GrantPermissionRule` 不会在测试结束后自动撤销授权；授权会影响同一 instrumentation 的后续用例，未卸载/清数据的下一轮也可能沿用它。2026-09-20 独立实测：第一轮有规则、第二轮无规则且不重装，两轮均通过，READ_SMS 保持 granted=true；`pm clear` 后变为 false。UTP 的收尾卸载是另一层行为，不能据此认为规则会撤销权限。
+2. **新装前提与 fixture 覆盖分开判读**：任务正常完成、预期用例齐全（当前20例）、`failures=0` 且 `errors=0` 时，允许有明确原因且被接受的 fixture `skipped`，不能只看 `0 failed` 或把 completed 当 passed。空系统短信库会让 `DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId` 跳过；这不违反新装要求，但**不代表导入去重已验证**。要验收该逻辑，按 `TESTING.md` §5.8 播种后保持 dSIM 新装/清数据前提，并确认目标用例实际 PASSED（无 `<skipped>`）。

@@ -371,31 +371,64 @@ Android 的 mksh **不支持** `/dev/tcp/...`（会报 `can't create ... No such
 adb -s emulator-5554 shell "toybox nc -w 4 broker.emqx.io 1883 </dev/null && echo OK"
 ```
 
-### 5.8 仪器测试的权限与 fixture 前提（F-9/F-10，2026-09-20 复核补充）
+### 5.8 仪器测试的权限与 fixture 前提（F-9/F-10，2026-09-20 独立复核）
 
-`:app:connectedDebugAndroidTest` 的用例带**设备状态依赖**，绿/红灯要按下表读：
+**新装/清数据**用于排除应用遗留授权；**系统短信 fixture**决定导入去重断言是否执行。两者是独立前提：清空应用数据不等于清空系统短信库，空 fixture 的跳过也不等于导入验收通过。AGENTS §8.3 的每轮新装/清数据要求保持不变。
 
-| 现象 | 含义 | 处置 |
+| 现象 | 含义 | 判读 |
 |---|---|---|
-| 同一设备第二轮起"自动变绿" | `GrantPermissionRule` 授予的权限**测试结束后不撤销**，绿灯可能来自上一轮遗留授权 | 权限类用例的绿灯**只有该轮设备处于全新安装/清数据状态时才可信**（与 AGENTS.md §8.3 的"每轮至少一次新装设备"配对） |
-| 新装设备上有 `skipped` | `DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId` 以系统短信库为 fixture，库为空时按设计 `Assume` 跳过 | 判定标准是 **`0 failed`**，不是 `0 skipped` |
+| 未卸载/清数据的第二轮通过 | `GrantPermissionRule` 不自动撤销权限，后续测试可沿用既有授权 | 不能据此证明测试权限声明自足；须保留该轮新装/清数据证据 |
+| 原20例完整执行，19 passed + 1 skipped、0 failures/errors | 若唯一跳过是历史导入且原因 `found 0`，属于已知 fixture 缺失 | 可接受为本次空库行为验证，不能写成“20例全部通过”或“去重断言已覆盖” |
+| 有短信 fixture，目标历史导入用例 PASSED | 去重断言实际执行 | 同时检查目标用例没有 `<skipped>`、导入日志及该轮新装前提 |
 
-**需要该用例实际执行时，如何播种系统短信**：系统短信库只能由**持有默认短信应用角色的应用**写入。
-本机实测两条走不通的路（勿再试）：
+**F-9 已证实（官方行为 + 两轮实测）**：官方 [GrantPermissionRule 文档](https://developer.android.com/reference/androidx/test/rule/GrantPermissionRule) 说明授权影响当前 instrumentation 全部测试，不能在该进程内撤销（会导致进程崩溃）。本项目 `androidx.test:rules:1.5.0` 的独立实验：新装且 READ_SMS=false → 第一轮带规则 `OK (1 test)`、权限true → 不卸载直接第二轮**无规则**仍 `OK (1 test)`、权限true；随后 `pm clear` → false。不能把“不自动撤销”理解为设备层面永远不能重置；也不能把 UTP 的收尾卸载误认作规则撤销。
 
-```bash
-# ✗ 无效：行数不变、无探针行（provider 走 sms_restricted 视图，shell 无写权限）
-adb -s emulator-5554 shell "content insert --uri content://sms --bind address:s:10086 --bind body:s:ZZPROBE --bind type:i:1 --bind date:l:1737331200000"
-# ✗ 同样不够：测试内 adoptShellPermissionIdentity() 拿到的仍是 shell 权限
+#### adopted shell identity 插入：本镜像实测未落库，不能仅凭 URI 判成功
+
+原文曾把“测试内 adopt 同样不够”写成两条“已实测”之一，实际当时只测过 shell `content insert`；adopt 属未经验证的推断。现已在新建 `dSIM_F9F10_20260920`（emulator-5558，API36，镜像 `android-36.1/google_apis_playstore/x86_64`）上补测：
+
+- 临时仪器用例用 dSIM targetContext 的 ContentResolver，READ_SMS 已由规则授予；dSIM **没有默认 SMS 角色**（shell 查询持有者是 `com.google.android.apps.messaging`），未手工更改 AppOps、未使用 root。
+- 不 adopt 与调用无参 `uiAutomation.adoptShellPermissionIdentity()` 后，均实际执行 `insert(content://sms, ContentValues)`，写入唯一标记、address、type=INBOX、date、read/seen。
+- 每次在 finally 中 drop adopted identity，再以应用 READ_SMS 权限按唯一标记读回，避免把返回值当作落库证据。真实结果：
+
+```text
+SYSTEM_COUNT_BEFORE=0
+INSERT adopt=false returnedUri=content://sms/0 persisted=0 exception=none
+INSERT adopt=true returnedUri=content://sms/0 persisted=0 exception=none
+REMAINING_MARKER_ROWS=0
+SYSTEM_COUNT_AFTER=0
 ```
 
-可靠做法是本项目既有流程——先把 dSIM onboarding 为默认短信应用，再让系统投递一条真短信，由 dSIM 作为默认短信应用写回系统库：
+结论：**在本次镜像与未持有默认角色的前提下，单靠 adopt 不足以播种**。不是异常拒绝，而是返回非空 URI 却没有可读回的行；探针的 `OK (1 test)` 只表示观测/清理断言通过，不表示插入成功。不据此推断所有 Android 版本、特权应用或 AppOps 配置都如此，也不再将“只有默认短信应用才能写”作为无例外的普遍结论。
+
+#### 已实测的播种路径：已有默认接收端即可，不要求先 onboarding dSIM
+
+本次默认接收端为系统 Google Messages，SIM=LOADED。保持 dSIM 非默认、未 onboarding，执行模拟器入站 SMS 后系统库从0变1；目标历史导入用例实际通过，日志 `first(scanned=1,imported=1,skipped=0) second(scanned=1,imported=0,skipped=1) rows=1->1 system=1`。因此原文“先把 dSIM onboarding 为默认短信应用”的流程**不是必要前提**。
 
 ```bash
-adb -s emulator-5554 emu sms send 10086 "fixture for identity import test"
+SERIAL=emulator-5558  # 明确指定测试模拟器，不默认操作真机
+adb -s "$SERIAL" shell getprop gsm.sim.state
+adb -s "$SERIAL" shell cmd role get-role-holders android.app.role.SMS
+# 本次分别为 LOADED / com.google.android.apps.messaging
+adb -s "$SERIAL" emu sms send 10086 "F10_EMULATOR_FIXTURE_20260920"
+adb -s "$SERIAL" shell content query --uri content://sms --projection _id
+# 等待真实入库；本次先两次 No result found，随后 Row: 0 _id=1
 ```
 
-**典型判读**（2026-09-20 实测）：无应用的干净设备上跑 `connectedDebugAndroidTest` → `20/20, 0 skipped, 0 failed`（该机系统库中已有 46 行历史 fixture，故未走跳过分支）；若设备库为空，**预期**为 `19/20 passed + 1 skipped` 且 `0 failed`——该分支本机未实测（"库为空"的状态在本机构造不出来：shell 与测试进程都无写权限，见上）。
+`emu sms send` 返回 OK 只是注入已接受，必须继续确认系统行或运行目标用例。若没有可工作的默认接收端，先配置接收端；可用 dSIM，但为了证明新装测试自足，应在播种后卸载/清数据并验证权限已重置，再让 Gradle 新装执行。不要把已 onboarding/手工授权的状态冒充新装证据。上述命令是模拟器注入，不是运营商付费发信。
+
+#### 空库分支：从预测改为真实结果
+
+本轮用 `avdmanager create avd -n dSIM_F9F10_20260920 -k "system-images;android-36.1;google_apis_playstore;x86_64" -d medium_phone` 新建独立 AVD，以5558启动；在播种和加入临时测试**之前**，原测试源码不变，dSIM 未安装，设置 `ANDROID_SERIAL=emulator-5558` 后运行 `:app:connectedDebugAndroidTest`（JDK21及 installations.paths 参数同 AGENTS.md §2）。
+
+- `BUILD SUCCESSFUL in 5m 37s`，exit0。
+- XML：`tests="20" failures="0" errors="0" skipped="1"`，20个唯一 testcase：**19 passed / 1 skipped / 0 failed**。
+- 唯一跳过：`DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId`；原始 instrumentation 原因 `AssumptionViolatedException: test needs system SMS rows to import, found 0`。textproto该例 `IGNORED`，其余19例 `PASSED`。
+- 控制台却显示 `21/20 completed. (1 skipped) (0 failed)` / `Finished 21 tests`。这是本次观察到的汇总计数不一致，尚未定位原因；不擅自修改框架，也不把它当作21例或20例全过，判读以保存的用例级XML/textproto为准。
+
+补充闭环：删除临时源码、卸载 app/test APK 后，在同一新AVD保留系统1行 fixture，重新执行原套件。`BUILD SUCCESSFUL in 3m 25s`、exit0；XML20例全部 PASSED，0 skipped/failures/errors，目标日志仍为 `first imported=1 / second imported=0 / rows=1->1`。这才是本次“有fixture且新装”的完整回归，不把前面的权限残留探针误作新装证据。
+
+原有5554上的46行 fixture / 20 passed证据仍有效，但不能替代上述新AVD空库实测。详细命令、两轮权限探针、播种及原始报告见 `FIXES_2026-09-19.md` 本轮独立复核记录；临时探针源码只留仓库外证据副本，不纳入正式测试套件。
 
 ---
 
