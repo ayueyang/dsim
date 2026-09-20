@@ -78,17 +78,46 @@ class ExpiredSendCommandTest {
         try { block(f) } finally { f.cleanup() }
     }
 
-    @Test fun staleCommandQueuesOneExplicitFailedResultWithoutClaiming() = fixture { f ->
-        val wire = f.wire(f.command())
-        repeat(2) { assertEquals(InboundOutcome.PermanentlyRejected, f.handler.handleIncomingMessage(wire, "fixture-peer")) }
-        val rows = f.dao.nextOutboxBatch(100).filter { it.uuid == f.key() }
-        assertEquals(1, rows.size)
-        val encrypted = requireNotNull(DsimCryptoUtils.encryptOrNull(rows.single().payloadJson, f.cloud.password))
-        val result = MqttPayloadCodec.decode(requireNotNull(DsimCryptoUtils.decryptMessage(encrypted, f.cloud.password))) as SendCmdResult
-        assertEquals(f.tag, result.uuid); assertEquals("fixture-peer", result.targetDeviceId)
-        assertEquals(f.localId, result.deviceId); assertEquals("FAILED", result.state)
-        assertEquals("已过期未执行", result.message); assertFalse(result.success)
-        assertNull(f.dao.getSendCommand(f.tag)); assertEquals(0, f.consumedNonces())
+    @Test fun staleCommandQueuesOneExplicitFailedResultWithoutClaiming(): Unit = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        val liveUuid = args.getString("f4LiveUuid")
+        if (liveUuid != null) {
+            // Opt-in two-device offline probe. Driver seeds requester status=0 and disables the
+            // executor's networking; this uses the real handler/config/database, never SmsManager.
+            check(BuildConfig.DEBUG)
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val requester = requireNotNull(args.getString("f4Requester"))
+            val dao = DsimDatabase.getDatabase(context).dsimDao()
+            val local = dao.getActiveSimConfigs().first { it.bindMode != "REMOTE_SHADOW" }
+            val cloud = CloudSettingsManager.getConfig(context)
+            val session = CloudSession().apply { broker = cloud.broker; topic = cloud.topic; password = cloud.password }
+            val handler = MqttInboundHandler(context, session, MqttPublisher(context, session) { null })
+            val command = SendCmd(uuid = liveUuid, deviceId = requester, mappingKey = local.mappingKey,
+                target = "10086", body = "expired offline fixture")
+            val wire = requireNotNull(DsimCryptoUtils.encryptOrNull(MqttPayloadCodec.stamp(
+                MqttPayloadCodec.encode(command), System.currentTimeMillis() - ReplayGuard.DEFAULT_WINDOW_MS - 60000L), cloud.password))
+            assertFalse("driver must keep executor offline", MqttSyncService.isConnected())
+            repeat(2) { assertEquals(InboundOutcome.PermanentlyRejected, handler.handleIncomingMessage(wire, requester)) }
+            assertNull(dao.getSendCommand(liveUuid))
+            val key = SyncOutbox.controlKey(SyncOutbox.KIND_SEND_CMD_RESULT, liveUuid, "expired")
+            assertEquals(1, dao.nextOutboxBatch(100).count { it.uuid == key })
+            InstrumentationRegistry.getInstrumentation().sendStatus(2, android.os.Bundle().apply {
+                putString("stream", "F4_OFFLINE_DURABLE uuid=" + liveUuid + "\n")
+            })
+            return@runBlocking
+        }
+        fixture { f ->
+            val wire = f.wire(f.command())
+            repeat(2) { assertEquals(InboundOutcome.PermanentlyRejected, f.handler.handleIncomingMessage(wire, "fixture-peer")) }
+            val rows = f.dao.nextOutboxBatch(100).filter { it.uuid == f.key() }
+            assertEquals(1, rows.size)
+            val encrypted = requireNotNull(DsimCryptoUtils.encryptOrNull(rows.single().payloadJson, f.cloud.password))
+            val result = MqttPayloadCodec.decode(requireNotNull(DsimCryptoUtils.decryptMessage(encrypted, f.cloud.password))) as SendCmdResult
+            assertEquals(f.tag, result.uuid); assertEquals("fixture-peer", result.targetDeviceId)
+            assertEquals(f.localId, result.deviceId); assertEquals("FAILED", result.state)
+            assertEquals("已过期未执行", result.message); assertFalse(result.success)
+            assertNull(f.dao.getSendCommand(f.tag)); assertEquals(0, f.consumedNonces())
+        }
     }
 
     @Test fun everyExistingLedgerStatePreventsAnExpiredOverride() = fixture { f ->
