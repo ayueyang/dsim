@@ -371,6 +371,32 @@ Android 的 mksh **不支持** `/dev/tcp/...`（会报 `can't create ... No such
 adb -s emulator-5554 shell "toybox nc -w 4 broker.emqx.io 1883 </dev/null && echo OK"
 ```
 
+### 5.8 仪器测试的权限与 fixture 前提（F-9/F-10，2026-09-20 复核补充）
+
+`:app:connectedDebugAndroidTest` 的用例带**设备状态依赖**，绿/红灯要按下表读：
+
+| 现象 | 含义 | 处置 |
+|---|---|---|
+| 同一设备第二轮起"自动变绿" | `GrantPermissionRule` 授予的权限**测试结束后不撤销**，绿灯可能来自上一轮遗留授权 | 权限类用例的绿灯**只有该轮设备处于全新安装/清数据状态时才可信**（与 AGENTS.md §8.3 的"每轮至少一次新装设备"配对） |
+| 新装设备上有 `skipped` | `DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId` 以系统短信库为 fixture，库为空时按设计 `Assume` 跳过 | 判定标准是 **`0 failed`**，不是 `0 skipped` |
+
+**需要该用例实际执行时，如何播种系统短信**：系统短信库只能由**持有默认短信应用角色的应用**写入。
+本机实测两条走不通的路（勿再试）：
+
+```bash
+# ✗ 无效：行数不变、无探针行（provider 走 sms_restricted 视图，shell 无写权限）
+adb -s emulator-5554 shell "content insert --uri content://sms --bind address:s:10086 --bind body:s:ZZPROBE --bind type:i:1 --bind date:l:1737331200000"
+# ✗ 同样不够：测试内 adoptShellPermissionIdentity() 拿到的仍是 shell 权限
+```
+
+可靠做法是本项目既有流程——先把 dSIM onboarding 为默认短信应用，再让系统投递一条真短信，由 dSIM 作为默认短信应用写回系统库：
+
+```bash
+adb -s emulator-5554 emu sms send 10086 "fixture for identity import test"
+```
+
+**典型判读**（2026-09-20 实测）：无应用的干净设备上跑 `connectedDebugAndroidTest` → `20/20, 0 skipped, 0 failed`（该机系统库中已有 46 行历史 fixture，故未走跳过分支）；若设备库为空，**预期**为 `19/20 passed + 1 skipped` 且 `0 failed`——该分支本机未实测（"库为空"的状态在本机构造不出来：shell 与测试进程都无写权限，见上）。
+
 ---
 
 ## 6. 尚未覆盖的测试面
