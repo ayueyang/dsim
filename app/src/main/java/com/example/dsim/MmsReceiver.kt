@@ -10,6 +10,6 @@ import android.content.Intent
  */
 class MmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        // 占位逻辑
+        DsimLog.w("dSIM_Placeholder", "占位实现，未处理 MMS 接收")
     }
 }

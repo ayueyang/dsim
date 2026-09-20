@@ -11,4 +11,9 @@ import android.os.IBinder
  */
 class HeadlessSmsSendService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        DsimLog.w("dSIM_Placeholder", "占位实现，未处理静默短信发送请求")
+        return super.onStartCommand(intent, flags, startId)
+    }
 }

@@ -10,7 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 class ComposeSmsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 占位逻辑：将来可以显示一个发送短信的界面
-        finish() 
+        DsimLog.w("dSIM_Placeholder", "占位实现，未处理短信编辑请求")
+        finish()
     }
 }
