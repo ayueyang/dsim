@@ -430,6 +430,28 @@ adb -s "$SERIAL" shell content query --uri content://sms --projection _id
 
 原有5554上的46行 fixture / 20 passed证据仍有效，但不能替代上述新AVD空库实测。详细命令、两轮权限探针、播种及原始报告见 `FIXES_2026-09-19.md` 本轮独立复核记录；临时探针源码只留仓库外证据副本，不纳入正式测试套件。
 
+### 5.9 低 API 运行时验证（批次 A，2026-09-20）
+
+新增 `PlatformCompatibilityTest`，必须在**实际低版本 Android** 上运行，不能以 lint/JVM 或改写 SDK_INT 代替。需要 READY SIM 与至少一条活动订阅；缺少这些前提会明确失败，不把未运行的硬件断言报为通过。
+
+```bash
+# JDK21与installations.paths参数按AGENTS §2；多设备时始终选定serial。
+export ANDROID_SERIAL=emulator-5560  # 本轮新建 dSIM_BatchA_API24_20260920
+./gradlew :app:connectedDebugAndroidTest \
+  -Dorg.gradle.java.installations.paths="C:\Program Files\Microsoft\jdk-21.0.7.6-hotspot" \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.example.dsim.PlatformCompatibilityTest --console=plain
+# API28新AVD：dSIM_BatchA_API28_20260920，serial=emulator-5562。
+# 全套运行去掉class过滤参数；仍须先确认dSIM未安装或已清数据。
+```
+
+- `nonceAndDsm3SurviveRealQos1Publish`：生产codec生成nonce、Android Base64编码、DSM3加密；向设备内隔离MQTT对端实际QoS1发布、收到PUBACK，解密后核验完整JSON与nonce。不是运营商短信发信，也不连接用户保存的broker。
+- `slotSimStateFallbackUsesRealTelephony`：为避免活动订阅正常分支掩盖fallback，反射进入**本应用**私有fallback函数，但传入真实TelephonyManager、不mock系统API；API24走无参getSimState，API28走getSimState(slot)。
+- `slotMappingResolvesARealSubscription`：真实slot mapping解析；24/28均走<29旧路径，避开getSubscriptionIds/isValidSubscriptionId新API，实测slot0→subscription1。
+
+本轮API24定向3/3（无skip/failure/error）；API28完整新装套件26/26（含上述3例，均无skip/failure/error）。仅覆盖这两份Google APIs/x86_64镜像的单SIM环境，不声称API25、全部OEM或多卡已测。
+
+**API28 shell没有READ_SMS**：`content query` 的Permission Denial不能当作0行，也不能据此判断播种失败。模拟入站SMS后，由声明READ_SMS的原`DeviceIdentityTest`实际读取系统库、执行导入去重；本轮该用例PASSED、没有跳过。API36的shell查询经验不得直接外推低版本。详细环境、原始runner/XML与前置脚本纠错见FIXES本轮记录。
+
 ---
 
 ## 6. 尚未覆盖的测试面
