@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
+import androidx.room.withTransaction
 import com.example.dsim.database.DsimDatabase
 import com.example.dsim.database.SmsMessage
 import kotlinx.coroutines.CoroutineScope
@@ -44,7 +45,8 @@ open class SmsReceiver : BroadcastReceiver() {
                 val subId = extractSubscriptionId(intent)
                 val slotIndex = extractSlotIndex(intent)
                 val deviceId = HardwareProbeUtils.getDeviceId(context)
-                val dao = DsimDatabase.getDatabase(context).dsimDao()
+                val database = DsimDatabase.getDatabase(context)
+                val dao = database.dsimDao()
                 val activeConfigs = dao.getActiveSimConfigs().filter { it.bindMode != "REMOTE_SHADOW" }
                 val source = SmsSourceResolver.resolveIncomingLocalSource(
                     activeConfigs = activeConfigs,
@@ -55,21 +57,26 @@ open class SmsReceiver : BroadcastReceiver() {
                 val receivingPhone = source.matchedConfig?.phoneNumber?.takeIf { it.isNotBlank() }.orEmpty()
                 PrivacyModeManager.rememberOwnPhone(context, receivingPhone)
 
-                val newSms = SmsMessage(
-                    uuid = java.util.UUID.randomUUID().toString(),
-                    address = cleanAddress,
-                    body = body,
-                    timestamp = timestamp,
-                    type = 1,
-                    status = 1,
-                    deviceId = deviceId,
-                    simId = source.simId,
-                    iccid = null,
-                    mappingKey = source.mappingKey
-                )
-
-                // Message + outbox row in one transaction; the receiver never talks to the broker.
-                val enqueued = SyncOutbox.storeIncomingSms(context, newSms, source.sourcePhoneNumber)
+                // Keep the lookup and message/outbox write atomic across concurrent deliveries.
+                val (newSms, enqueued) = database.withTransaction {
+                    val sms = dao.findSimilarLocalMessage(
+                        deviceId, cleanAddress, body, 1, source.mappingKey,
+                        timestamp - 120_000L, timestamp + 120_000L
+                    ) ?: SmsMessage(
+                        uuid = java.util.UUID.randomUUID().toString(),
+                        address = cleanAddress,
+                        body = body,
+                        timestamp = timestamp,
+                        type = 1,
+                        status = 1,
+                        deviceId = deviceId,
+                        simId = source.simId,
+                        iccid = null,
+                        mappingKey = source.mappingKey
+                    )
+                    // Reuse the row/UUID on a content hit; the existing outbox key is idempotent.
+                    sms to SyncOutbox.storeIncomingSms(context, sms, source.sourcePhoneNumber)
+                }
                 SystemSmsStore.insertIncomingIfNeeded(
                     context = context,
                     address = cleanAddress,
