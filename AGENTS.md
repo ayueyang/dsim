@@ -39,7 +39,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 注意：
 
 - compileSdk 36 但 AGP 为 8.7.3，构建会输出"AGP 仅验证到 compileSdk 35"警告。这是**已知且可接受**的，不要为此改 compileSdk。
-- `gradle/libs.versions.toml` 是模板残留、未生效，且其 `agp = "9.1.0"` 与根构建文件不一致。**不要以该文件为准**，实际版本看根 `build.gradle.kts`。
+- `gradle/libs.versions.toml` **已删除，待重建**（阶段 6）；当前实际版本以根 `build.gradle.kts` 和 `app/build.gradle.kts` 为准。
 - `app/build.gradle.kts` 显式打开了 `buildFeatures { buildConfig = true }`。AGP 8 默认不生成 `BuildConfig`，关掉它会让 `SettingsActivity` 的 `BuildConfig.DEBUG` 直接编译失败（W15 依赖它）。
 - `:app:assembleRelease` 会跑 `lintVital*`，该任务需要联网拉 lint 依赖；在网络受限的环境里可能长时间挂死。确认过依赖已缓存时可用 `-x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease` 跳过，但这不代表 lint 检查通过。
 
@@ -72,7 +72,7 @@ export JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.7.6-hotspot"
 |---|---|---|
 | C1 | 改 `@Entity` 字段必须同时递增 `@Database(version)` 并补一条 `Migration` | `exportSchema = false`，没有 schema diff 会提醒你。漏了会直接崩在老用户的升级路径上 |
 | C2 | `sms_messages.uuid` 的唯一索引不能去掉 | 跨设备记录去重依赖它；发送副作用另外依赖 send_commands 的原子认领。`MIGRATION_4_5` 专门为此做过数据清洗 |
-| C3 | 加密写入必须走 `DsimCryptoUtils.encryptMessage`，不要自己拼装格式 | 统一走 V3（`DSM3` 魔数 + 每口令一次 PBKDF2 派生主密钥 + 每条随机 IV 的 AES-256-GCM，AAD=魔数）。改格式时必须新增魔数；仅存在已发布旧设备时保留读取分支，V1/V2 读取路径均已移除，不能原地改语义。派生固定盐 `dSIM/v3/master-key`、12 万轮，改任一项即等于改格式 |
+| C3 | 加密写入必须走 `DsimCryptoUtils.encryptOrNull`，不要自己拼装格式 | 统一走 V3（`DSM3` 魔数 + 每口令一次 PBKDF2 派生主密钥 + 每条随机 IV 的 AES-256-GCM，AAD=魔数）。改格式时必须新增魔数；仅存在已发布旧设备时保留读取分支，V1/V2 读取路径均已移除，不能原地改语义。派生固定盐 `dSIM/v3/master-key`、12 万轮，改任一项即等于改格式 |
 | C4 | 密钥派生自**口令**，与 MQTT Topic 无关 | 历史上形参名曾叫 `topic`，导致多次误判。V2 已改名 `secret`，别再改回去 |
 | C5 | Manifest 里默认短信应用的必须组件不能删 | `SmsReceiver`、`ComposeSmsActivity`、`HeadlessSmsSendService`、`MmsReceiver`。少一个系统就拒绝授予默认短信角色（后三者目前仍是占位实现，见 §6） |
 | C6 | 两个短信接收器的动作互斥规则不能破坏 | 默认短信应用只处理 `SMS_DELIVER`，非默认只处理 `SMS_RECEIVED`。破坏它会收到重复短信 |
@@ -112,7 +112,7 @@ dSIM/
 ├── build.gradle.kts                    AGP 8.7.3 / Kotlin 2.1.10 / KSP（版本以此为准）
 ├── settings.gradle.kts                 rootProject.name = "dSIM"，单模块 :app
 ├── gradle/gradle-daemon-jvm.properties 固定 toolchainVersion=21
-├── gradle/libs.versions.toml           ⚠ 模板残留，未生效，勿参考
+├── gradle/libs.versions.toml           已删除，待重建（阶段 6）
 ├── local.properties                    不入库
 ├── .gitignore                          已排除 ui_prototypes/ tmp_db/ tmp_previews/ .workbuddy/
 ├── ui_prototypes/                      竞品 UI 参考素材（已 gitignore）
@@ -287,4 +287,4 @@ bash scripts/emu-down.sh                                         # 收工
 两条配套判读规则（F-9/F-10，2026-09-20 复核补充）：
 
 1. **验证权限声明是否自足，仍须该轮至少一次新装/清数据回归**：`GrantPermissionRule` 不会在测试结束后自动撤销授权；授权会影响同一 instrumentation 的后续用例，未卸载/清数据的下一轮也可能沿用它。2026-09-20 独立实测：第一轮有规则、第二轮无规则且不重装，两轮均通过，READ_SMS 保持 granted=true；`pm clear` 后变为 false。UTP 的收尾卸载是另一层行为，不能据此认为规则会撤销权限。
-2. **新装前提与 fixture 覆盖分开判读**：任务正常完成、预期用例齐全（当前20例）、`failures=0` 且 `errors=0` 时，允许有明确原因且被接受的 fixture `skipped`，不能只看 `0 failed` 或把 completed 当 passed。空系统短信库会让 `DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId` 跳过；这不违反新装要求，但**不代表导入去重已验证**。要验收该逻辑，按 `TESTING.md` §5.8 播种后保持 dSIM 新装/清数据前提，并确认目标用例实际 PASSED（无 `<skipped>`）。
+2. **新装前提与 fixture 覆盖分开判读**：任务正常完成、预期用例齐全（按当前测试源码和用例级报告核对）、`failures=0` 且 `errors=0` 时，允许有明确原因且被接受的 fixture `skipped`，不能只看 `0 failed` 或把 completed 当 passed。空系统短信库会让 `DeviceIdentityTest.historyImportDeduplicatesOnRerunWithSameDeviceId` 跳过；这不违反新装要求，但**不代表导入去重已验证**。要验收该逻辑，按 `TESTING.md` §5.8 播种后保持 dSIM 新装/清数据前提，并确认目标用例实际 PASSED（无 `<skipped>`）。

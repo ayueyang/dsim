@@ -3,7 +3,8 @@
   Deny-by-default. Backup rules are allow-by-default: anything not named here is eligible,
   so every domain is excluded and nothing is added back.
 
-  What this protects: dSIM_UI_PREFS holds the group password in plaintext, and dsim_core_database
+  What this protects: dSIM_UI_PREFS holds the Keystore-sealed group password (plaintext fallback only if Keystore refuses),
+  and dsim_core_database
   holds every synced message. Both would otherwise land in the user's Google Drive backup.
   Naming individual files instead would silently re-expose them the next time a store is renamed.
 
