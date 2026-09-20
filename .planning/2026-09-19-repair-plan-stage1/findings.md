@@ -122,3 +122,8 @@
 ### Phase29续作发现
 - 双机驱动的安全前提必须实测REMOTE_SEND_ALLOWED=false，缺键默认true，不能据注释假设禁用。旧t23失败与PENDING不算通过。
 - 当前QoS1只验证这一轮一次发布及终态收敛，不保证PUBACK和删除之间崩溃时全局exactly-once。合成callback/离线handler注入与真实MQTT入口必须分别报告。
+
+### Phase29现场结论
+- 六段本轮新TAG均PASS，详见progress最新现场表。F4离线回执单行、恢复失败收敛；T22真进程死亡四写保留、重启后两种消息各一次；T23真实双机UI拒绝收敛及额外selector/retry用例均实测。
+- API36的secure sms_default_application返回null不能据此断言无默认角色；cmd role get-role-holders android.app.role.SMS实际为com.example.dsim。API28使用secure值为同包。
+- 本轮没有未完成的指定现场场景。保留QoS1非全局exactly-once、合成callback非真实运营商广播的边界；不据此推进新功能。

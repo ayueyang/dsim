@@ -4,10 +4,10 @@
 仅按 `修复计划_2026-09-19.md` 阶段 1 执行 T1.1–T1.5：每项一个独立 conventional commit、每项跑对应验收并保留真实输出，阶段末跑全量回归，然后停下等用户批准才进阶段 2。
 
 ## Next Step
-最新用户授权连续执行T3.4返工→F11→T2.1/T2.2/T2.3/F4，逐项独立commit，整批验收后统一汇报；不push、不动W23/F2/D1–D5或阶段4/5/6。
+Phase29六段现场验证与收尾已完成；停下供用户复核，不push。不动W23/F2/D1–D5，不开启阶段4/5/6。
 
 ## Current Phase
-Phase 29 — in_progress
+Phase 29 — complete
 
 ## Phases
 
@@ -158,5 +158,5 @@ Phase 29 — in_progress
 - Phase26 T2.2：complete，83bbc06，6例通过；真实进程死亡继续纳入Phase29。
 - Phase27 T2.3：complete，88da47e，新装2例通过；双机UI路径继续纳入Phase29。
 - Phase28 F4：complete，3ac782a，红6例3失败→绿6/6，JVM115/115；额外双机离线探针纳入Phase29。
-- Phase29 新装全套、双机真实短信/故障场景、保护审计、文档收尾：in_progress；已归档47/47与JVM115/115为上一轮结果，本轮补跑现场验证。
+- Phase29 新装全套、双机真实短信/故障场景、保护审计、文档收尾：complete；上一轮新装47/47保留为历史证据，本轮六段现场全PASS、补充UI1/1、新鲜JVM115/115、43及286保护项一致。详见progress最新现场表。
 - 本轮直接用户授权覆盖审查/裁决中的“中途待复核/逐项停点”，不需要逐任务等待批准；最终不push。
