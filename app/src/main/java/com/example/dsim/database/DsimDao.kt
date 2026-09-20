@@ -169,9 +169,6 @@ interface DsimDao {
     @Query("DELETE FROM sms_messages")
     suspend fun clearAllSmsMessages()
 
-    @Query("SELECT * FROM sms_messages WHERE timestamp IN (SELECT MAX(timestamp) FROM sms_messages GROUP BY address) ORDER BY timestamp DESC")
-    fun getRecentConversationsFlow(): Flow<List<SmsMessage>>
-
     @Query("SELECT * FROM sms_messages WHERE address = :address ORDER BY timestamp ASC")
     fun getMessagesByAddressFlow(address: String): Flow<List<SmsMessage>>
 
