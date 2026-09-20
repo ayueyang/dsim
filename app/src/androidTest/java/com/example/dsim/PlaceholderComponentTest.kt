@@ -18,6 +18,9 @@ class PlaceholderComponentTest {
             instrumentation.uiAutomation.executeShellCommand(command)
         ).bufferedReader().use { it.readText() }
         shell("logcat -c")
+        MmsReceiver().onReceive(context, Intent("com.example.dsim.UNSUPPORTED_MMS"))
+        assertTrue("unsupported action must be ignored", !shell("logcat -d -s dSIM_Placeholder:W '*:S'")
+            .contains("未处理 MMS 接收"))
         MmsReceiver().onReceive(context, Intent("android.provider.Telephony.WAP_PUSH_DELIVER"))
         ActivityScenario.launch(ComposeSmsActivity::class.java).use { instrumentation.waitForIdleSync() }
         // Exercise the service callback, not an actual SMS send; no recipient/body is supplied.
