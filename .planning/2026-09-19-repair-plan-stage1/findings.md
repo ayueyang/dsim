@@ -73,3 +73,23 @@
 - 217受保护文件摘要与起点相同；app/src/main相对8ee0cf5无diff。9个本轮源/文档UTF8、无BOM、CR=0、末尾LF；工作区与提交区间diff --check通过。
 - 原始仪器XML已保存为 f6-instrumented-result-20260920.xml；全局输出 f6-f8-regression-20260920.log；最终核验脚本/日志 f6-f8-final-verify-20260920.py/.log（均既有仓库外证据目录）。
 - 本轮未额外跑双机E2E/低API/真机；没有变更相关产品链路。push暂缓、D1–D5/W23未批准、阶段2不开始。旧T1.3记录中的pm grant是当时绕行，F-6现已将权限前提写入测试，不再以该绕行为修复证据。
+
+## F-9/F-10 独立复核（2026-09-20）
+- 起点21a162e，origin/main...main=0/23；3提交仅AGENTS/TESTING/FIXES。不继承审查结论，adopt插入与空库跳过均待实测。
+- 官方GrantPermissionRule文档明确：授权对当前Instrumentation所有测试生效，不能在该进程中撤销（否则崩溃）；另用不卸载的两次instrument验证保留，避免把UTP卸载混为规则撤销。https://developer.android.com/reference/androidx/test/rule/GrantPermissionRule
+- 计划使用独立新AVD dSIM_F9F10_20260920（5558），先原套件空库，后临时探针；不触碰5554/5556的数据、应用与默认角色。
+
+- 新AVD空库真实结果：XML20个唯一testcase，19 passed/1 skipped/0 failures/0 errors；唯一跳过historyImport，AssumptionViolatedException明确found0；textproto该用例IGNORED，其余19 PASSED。
+- 控制台却显示21/20 completed / Finished21；与XML和计划20数不一致，只记录报告计数异常，不擅自改runner/UTP。BUILD SUCCESSFUL in5m37s，原测试源码未改。
+- 启动新AVD时emulator自带adb -e辅助设置报multiple emulators，本轮所有设备操作均显式-s5558；新AVD正常启动、LOADED，未更改其他设备。
+
+## F-9/F-10 独立复核结论（2026-09-20）
+- 证实：三审查提交仅AGENTS/TESTING/FIXES，编码与树检查合格；初始/最终247保护文件SHA256相同：5ebeb6059ed1effb486fe36af3ba84c7719122223a5e9060b74d2a89697f206e。app/src与依赖无永久变更。
+- 证实（限定本API36镜像、非默认角色）：实际adopt插入返回content://sms/0、exception=none，标记persisted=0；对照无adopt相同；总数0→0。不再泛化所有版本/特权配置，也不把probe OK当插入成功。
+- 证实：GrantPermissionRule不自动撤销；初装READ_SMS=false，第一轮有规则true，第二轮无规则仍true；pm clear后false。UTP收尾卸载不等于规则撤销。
+- 证实：全新AVD原套件空库XML19pass/1skip/0failure/error，historyImport明确found0；其余19逐条名称/结果已存仓库外empty-case-analysis.log。
+- 证伪并已改文档：之前adopt被误写为已实测；必须先onboarding dSIM并非必要，Google Messages默认接收端+emu sms send实际0→1，无需让dSIM持有默认角色。
+- 为检验新装与fixture要求自洽，临时源码删除后卸载两只APK，再跑原套件：BUILD SUCCESSFUL in3m25s，XML20pass/0skip/failure/error，historyImport首次1、二次0、rows1→1。此轮才是有fixture的新装证据，权限残留探针不混入。
+- 文档00b994d：AGENTS §8.3将0failed收紧为任务成功/用例齐全/0failure+error/解释可接受skip；fixture缺失允许跳过，但不能据此验收去重覆盖。TESTING §5.8与FIXES补测量、命令、归属与限制。
+- 新发现未解决：空库控制台21/20，而XML/textproto一致为20；原因尚未验证，未扩展改runner/UTP。播种后回归Finished20。逐条证据位于C:/Users/admin/AgentDock/dsim-stage1-evidence/f9f10-*。
+- 无法验证范围：以上adopt结论不能外推未测Android版本、root/特权应用/不同AppOps；这些不是当前任务已授权工作。未运行任务二中的低API/双机同进程E2E/release/UI或阶段2/3修改。

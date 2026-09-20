@@ -4,10 +4,10 @@
 仅按 `修复计划_2026-09-19.md` 阶段 1 执行 T1.1–T1.5：每项一个独立 conventional commit、每项跑对应验收并保留真实输出，阶段末跑全量回归，然后停下等用户批准才进阶段 2。
 
 ## Next Step
-本轮 F-6、防复发、F-7、F-8 已完成并分别提交；新装5554仪器20/20、JVM113/113通过，lint仍为已知5 errors/312 warnings。收尾FIXES与三件账本提交后停下等审查。push暂缓；D1–D5、W23和阶段2均不动，等待用户批准。
+本轮F-9/F-10独立复核完成：文档修正00b994d，空库19通过/1跳过与播种后新装20通过均已实测；无产品/正式测试变更。更新本账本后停下，阶段0/1保持关闭。不push，不自行启动任务二或计数异常排查；任何候选逐项先获用户批准。
 
 ## Current Phase
-Complete
+Phase 17 — complete
 
 ## Phases
 
@@ -82,6 +82,26 @@ Complete
 - [x] 编译/JVM113/113（22s）；lint已知5 errors/312 warnings（exit1，NewApi=0）；9文件UTF8无BOM/LF；217受保护文件摘要一致；FIXES与三件账本收尾记录后提交并停下。
 - **Status:** complete
 
+### Phase 14: F-9/F-10 独立复核起点与原始证据
+- [x] HEAD=21a162e，0/23，3提交只改AGENTS/TESTING/FIXES；app/src差异为空；树检查exit0。
+- [x] 三文档UTF8/BOM0/CRLF0/尾LF；保护247文件摘要已存；新AVD创建并启动5558。
+- **Status:** complete
+
+### Phase 15: 全新AVD空短信库原套件
+- [x] 原20例：XML20节点，19 passed/1 skipped/0 failures/0 errors，historyImport found0；控制台21/20计数异常已保留，未改框架。
+- **Status:** complete
+
+### Phase 16: adopted shell与授权残留实测
+- [x] 仅新AVD临时用例：无adopt/有adopt均URI=sms/0、persisted=0、总数0→0，drop/清理断言成功；权限两轮不卸载保持true，pm clear后false。
+- [x] 仓库临时代码已删；Google Messages默认接收端可不经dSIM onboarding播种，原目标用例实际通过；随后卸载两包并重跑原20例全过，重新构建APK无临时类。
+- **Status:** complete
+
+### Phase 17: 文档纠正、独立复核记录与停下
+- [x] 00b994d仅提交AGENTS/TESTING/FIXES；实测结论、误写“已测”归属、非必要onboarding路径和0failed判读均已纠正。
+- [x] UTF8无BOM/CRLF0/尾LF、diff-check、树74/exit0；247保护摘要一致，app/src零差异；新5558已关停保留1条合成fixture，旧5554/5556未动。
+- [x] 更新现有三件账本，任务二仅候选；无push，停止等待批准。
+- **Status:** complete
+
 ## Decisions Made
 | Decision | Rationale |
 |---|---|
@@ -111,3 +131,8 @@ Complete
 
 - 本轮 lintDebug 真实失败：5 errors / 312 warnings，MissingSuperCall×1 + ChromeOS×4，NewApi=0；按用户指令仅记录，不改产品代码。
 - 收尾编排首次在本地 Python 解析 Windows 路径时发生 unicodeescape SyntaxError，尚未发出任何远端命令；改用 raw string 后继续，不涉及源码或测试失败。
+
+### 本轮执行观察（2026-09-20 F-9/F-10独立复核）
+- 空库控制台21/20 completed / Finished21，与XML20节点、textproto19PASSED+1IGNORED不一致；原始证据已存。采用用例级结果，未假称20全过；计数原因尚未验证，另行批准才排查runner/UTP。
+- 新AVD启动器的内部adb -e报multiple emulators；本轮管理/测试均显式5558，两轮Gradle均成功；不为了消除辅助警告而动旧设备。
+- 所有临时源与驱动仅保留仓库外证据副本。新AVD当前有1条合成fixture；若再次测空库，必须新建或重置这台专用AVD，不能复用其当前数据冒称为空。

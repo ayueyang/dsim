@@ -83,3 +83,20 @@
 - f6-f8-final-verify-20260920.py：217受保护文件摘要完全一致；9个改动文件UTF8/BOM0/CR0/末尾LF；MAIN_DIFF_EMPTY=True；仪器20/20、目标historyImport未跳过；两种diff --check通过。
 - F-6 c66a18b；回归约定23c7e99；F-7 21fea7d；F-8 8fe7eb9；本次FIXES与既有三件账本另做独立收尾commit。
 - 未push；5554仍未安装应用（UTP卸载后未恢复）；不清理既有脏项；不开始阶段2。停止执行，等待用户转达审查。
+
+## Session: F-9/F-10 独立复核（2026-09-20）
+- MCP任务tsk_95d3e44737290799；git log/status、ce54744..HEAD差异、指定文档均已读取；树脚本74文件exit0，diff --check无输出。
+- 新AVD复用已装API36.1 google_apis_playstore/x86_64镜像，不下载低API、不启动候选任务。
+
+- 空库session-30d6b77d75628d9a448d925d exit0：BUILD SUCCESSFUL in5m37s；XML20=19pass+1skip（historyImport found0）+0failed。保存f9f10-empty-suite.log、empty-result.xml/textproto、empty-instrumentation.log、empty-case-analysis.log至既有仓库外证据目录。
+- 原套件跑完后才向androidTest加入临时F9F10TemporaryProbe.kt；单独assemble测试APK，不混入原20例计数，最终必须删除。
+
+- 探针构建：BUILD SUCCESSFUL in1m27s；session-eb03729aab134d96aa7a4035 exit0，3类各OK(1test)。不加-g的新装false→规则true→第二轮无规则true；adopt/不adopt均返回sms/0却persisted0，总数0→0，读回/清理/drop完成。
+- 播种验证session-aeddbd89dd3756d2e517e37d exit0：Google Messages默认、SIM LOADED、dSIM未onboarding；emu sms send后_row1；原historyImport单例通过、首次导入1二次0。
+- 已通过file_edit删除仓库F9F10TemporaryProbe.kt；pm clear实测READ_SMS true→false，随后卸载app/test，包列表空、系统短信1行。
+- 播种后新装原套件session-fc830841fd07e94f89ea84d8 exit0：BUILD SUCCESSFUL in3m25s；XML20唯一case、20passed/0skipped/failure/error，未包含临时类；导入日志first1/second0/rows1→1。UTP收尾卸载两包。
+- 00b994d docs(testing): independently verify F-9 and F-10 claims：仅AGENTS.md/TESTING.md/FIXES_2026-09-19.md三文件。最终树74/exit0、diff-check空、UTF8/BOM0/CRLF0/尾LF、app/src零差异；247保护摘要与起点完全一致。
+- 新AVD5558已明确按名称核对后emu kill，session-73252cef8b1ab507839dd66e=exited，adb devices仅旧5554/5556。保留新AVD当前1条合成SMS供复验，不再称其空库；外部探针源码/日志保留，仓库源码不留临时测试。
+- 原始空库与播种后XML/textproto/runner日志均已另存C:/Users/admin/AgentDock/dsim-stage1-evidence；原空库报告在第二轮覆盖build目录前保存。f9f10-doc-commit-check.log保存提交前编码/范围/树及关停后设备列表。
+- 未执行/待批准：所有任务二候选、push、D1–D5、W23、F4过期SEND_CMD；本轮不重跑无关JVM/lint、未修五条既有lint错误。新发现UTP控制台计数不一致仅记录，是否独立排查待用户批准。
+- 本轮文档提交后ahead24/behind0；本三件账本另行收尾提交，最终状态以末次git核验为准。阶段0/1维持关闭，本轮结束停下。
